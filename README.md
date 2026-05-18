@@ -1,5 +1,7 @@
 # Local AI Drawboard
 
+[中文说明](README.zh-CN.md)
+
 Local AI Drawboard is a local-first image board for AI image workflows. It combines a canvas workspace, image generation, image editing, reference-image roles, asset management, prompt helpers, storyboard planning, local SQLite storage, and OpenAI-compatible provider settings.
 
 The project is designed to run on Windows, macOS, and Linux with the same Node.js workflow.
