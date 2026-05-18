@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "incremental": false,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "noEmit": false,
+    "outDir": "dist/server",
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["server/**/*.ts", "src/lib/**/*.ts", "src/generated/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "src/app/globals.css",
+    "src/client",
+    "src/components"
+  ]
+}

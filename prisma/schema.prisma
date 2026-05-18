@@ -1,0 +1,268 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Board {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  snapshotJson String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets      Asset[]
+  snapshots   BoardSnapshot[]
+  jobs        GenerationJob[]
+  storyboardProject StoryboardProject?
+
+  @@index([userId, updatedAt])
+}
+
+model StoryboardProject {
+  id           String   @id @default(cuid())
+  boardId      String   @unique
+  title        String   @default("")
+  briefJson    String
+  scriptText   String   @default("")
+  metadataJson String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  shots StoryboardShot[]
+
+  @@index([boardId, updatedAt])
+}
+
+model StoryboardShot {
+  id               String   @id @default(cuid())
+  projectId        String
+  shotIndex        Int
+  durationSec      Int      @default(3)
+  scene            String   @default("")
+  camera           String   @default("")
+  action           String   @default("")
+  dialogue         String   @default("")
+  caption          String   @default("")
+  audio            String   @default("")
+  startFrameAssetId String?
+  endFrameAssetId String?
+  startFramePrompt String   @default("")
+  endFramePrompt   String   @default("")
+  videoPrompt      String   @default("")
+  status           String   @default("draft")
+  metadataJson     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project StoryboardProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, shotIndex])
+  @@index([projectId, status])
+}
+
+model BoardSnapshot {
+  id           String   @id @default(cuid())
+  boardId      String
+  snapshotJson String
+  name         String?
+  kind         String   @default("auto")
+  version      Int
+  createdAt    DateTime @default(now())
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, version])
+  @@index([boardId, kind])
+}
+
+model Asset {
+  id         String   @id @default(cuid())
+  boardId    String
+  kind       String
+  storageKey String
+  publicUrl  String
+  mimeType   String
+  width      Int?
+  height     Int?
+  sizeBytes  Int
+  isFavorite Boolean  @default(false)
+  tagsJson   String?
+  createdAt  DateTime @default(now())
+
+  board         Board              @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  sourceJobs    GenerationJob[]     @relation("SourceAsset")
+  maskJobs      GenerationJob[]     @relation("MaskAsset")
+  generationResults GenerationResult[]
+
+  @@index([boardId, kind])
+}
+
+model GenerationJob {
+  id            String   @id @default(cuid())
+  boardId       String
+  provider      String
+  mode          String
+  status        String
+  prompt        String
+  negativePrompt String?
+  sourceAssetId String?
+  maskAssetId   String?
+  paramsJson    String?
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  board       Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  sourceAsset Asset? @relation("SourceAsset", fields: [sourceAssetId], references: [id])
+  maskAsset   Asset? @relation("MaskAsset", fields: [maskAssetId], references: [id])
+  results     GenerationResult[]
+
+  @@index([boardId, status])
+}
+
+model GenerationResult {
+  id        String   @id @default(cuid())
+  jobId     String
+  assetId   String
+  createdAt DateTime @default(now())
+
+  job   GenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  asset Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  username      String?   @unique
+  passwordHash  String?
+  role          String    @default("user")
+  status        String    @default("pending")
+  canUseAdminProvider Boolean @default(false)
+  generationLimit Int? @default(30)
+  generationFiveHourLimit Int? @default(10)
+  approvedAt    DateTime?
+  approvedByUserId String?
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts         Account[]
+  sessions         Session[]
+  boards           Board[]
+  promptRecipes    PromptRecipe[]
+  providerSettings ProviderSetting[]
+  providerSettingHistories ProviderSettingHistory[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+model ProviderSetting {
+  id          String   @id @default(cuid())
+  userId      String
+  provider    String   @default("openai-compatible")
+  displayName String
+  apiKey      String
+  baseUrl     String?
+  imageModel  String
+  textModel   String   @default("gpt-5.5")
+  enabledImageModels String?
+  enabledReversePromptModels String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId, enabled])
+}
+
+model ProviderSettingHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  provider    String   @default("openai-compatible")
+  displayName String
+  apiKey      String
+  baseUrl     String?
+  imageModel  String
+  textModel   String
+  enabledImageModels String?
+  enabledReversePromptModels String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@index([userId, provider])
+}
+
+model PromptRecipe {
+  id         String   @id @default(cuid())
+  userId     String
+  name       String
+  mode       String
+  prompt     String
+  paramsJson String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@index([userId, mode])
+}
