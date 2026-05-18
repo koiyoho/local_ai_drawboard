@@ -157,7 +157,7 @@ test("Codex auth status returns a non-sensitive disconnected state for an admin"
   await withTempCodexDir(async () => {
     const app = await createTestApp();
     try {
-      await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+      await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
         const cookie = await sessionCookieFor(user.id);
         const response = await app.inject({
           headers: { cookie },
@@ -183,7 +183,7 @@ test("Codex auth start reports missing remote callback configuration", async () 
     delete process.env.CODEX_OAUTH_REDIRECT_URI;
     const app = await createTestApp();
     try {
-      await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+      await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
         const cookie = await sessionCookieFor(user.id);
         const response = await app.inject({
           headers: { cookie },
@@ -223,7 +223,7 @@ test("Codex auth can import pasted auth.json without exposing secrets", async ()
   await withTempCodexDir(async (dir) => {
     const app = await createTestApp();
     try {
-      await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+      await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
         const cookie = await sessionCookieFor(user.id);
         const response = await app.inject({
           body: {
@@ -252,7 +252,7 @@ test("Codex auth can import official API key auth.json without auth_mode", async
   await withTempCodexDir(async (dir) => {
     const app = await createTestApp();
     try {
-      await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+      await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
         const cookie = await sessionCookieFor(user.id);
         const response = await app.inject({
           body: {
@@ -280,7 +280,7 @@ test("Codex auth can import pasted ChatGPT auth.json from Codex CLI", async () =
   await withTempCodexDir(async (dir) => {
     const app = await createTestApp();
     try {
-      await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+      await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
         const cookie = await sessionCookieFor(user.id);
         const response = await app.inject({
           body: {

@@ -7,6 +7,7 @@ mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new DatabaseSync(dbPath);
 const localUserId = "local-user";
+const adminUsername = process.env.ADMIN_USERNAME?.trim() || (process.env.APP_VARIANT === "local" ? "local" : "admin");
 
 db.exec(`
 PRAGMA foreign_keys = ON;
@@ -369,13 +370,13 @@ if (!hasAssetTagsJson) {
 
 db.exec(`CREATE INDEX IF NOT EXISTS "Board_userId_updatedAt_idx" ON "Board"("userId", "updatedAt");`);
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "User_username_key" ON "User"("username");`);
-db.exec(`
+db.prepare(`
 UPDATE "User"
 SET "role" = 'admin',
     "status" = 'approved',
     "approvedAt" = COALESCE("approvedAt", CURRENT_TIMESTAMP)
-WHERE "username" = 'koiyoho';
-`);
+WHERE "username" = ?;
+`).run(adminUsername);
 db.exec(`
 UPDATE "User"
 SET "username" = 'local',

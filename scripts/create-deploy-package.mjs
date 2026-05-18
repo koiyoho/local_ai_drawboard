@@ -74,7 +74,7 @@ async function writeDeployManifest() {
     deployManifestPath,
     `${JSON.stringify(
       {
-        appName: "tldraw-ai-board",
+        appName: "local-ai-drawboard",
         channel: versionMetadata.updateChannel,
         commit: versionMetadata.commit ?? "unknown",
         entrypoint: "dist/server/server/index.js",

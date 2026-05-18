@@ -19,7 +19,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 const modulePath = fileURLToPath(import.meta.url);
-const serviceName = process.env.UPDATE_SERVICE_NAME || "tldraw-ai-board.service";
+const serviceName = process.env.UPDATE_SERVICE_NAME || "local-ai-drawboard.service";
 const appRoot = process.cwd();
 const updateRoot = path.join(appRoot, "tmp", "updates");
 const jobsDir = path.join(updateRoot, "jobs");
@@ -33,7 +33,7 @@ const terminalStatuses = new Set(["completed", "failed", "rolled_back"]);
 const allowedPackageHostsFallback = ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"];
 const defaultServicePort = "3333";
 const dryRun = process.env.UPDATE_UPDATER_DRY_RUN === "1";
-const geminiBridgeServiceName = process.env.UPDATE_GEMINI_BRIDGE_SERVICE_NAME || "tldraw-ai-board-gemini-bridge.service";
+const geminiBridgeServiceName = process.env.UPDATE_GEMINI_BRIDGE_SERVICE_NAME || "local-ai-drawboard-gemini-bridge.service";
 
 const allowedCommands = Object.freeze({
   installProductionDependencies: ["npm", ["ci", "--omit=dev"]],
@@ -275,7 +275,7 @@ export async function validateArchiveListing(packagePath) {
 
 export async function readAndValidateDeployManifest(stagePath, updateManifest) {
   const manifest = await readJson(path.join(stagePath, deployManifestName));
-  if (manifest.appName !== "tldraw-ai-board") throw new Error("Deploy package appName is invalid");
+  if (manifest.appName !== "local-ai-drawboard") throw new Error("Deploy package appName is invalid");
   for (const key of ["version", "commit", "channel", "migrationMode", "entrypoint"]) {
     if (typeof manifest[key] !== "string" || manifest[key].trim() === "") {
       throw new Error(`Deploy package manifest field ${key} is invalid`);

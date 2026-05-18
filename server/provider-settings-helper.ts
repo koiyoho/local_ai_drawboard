@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getAdminUsername } from "@/lib/app-variant";
 
 export async function getProviderSetting(userId: string, canUseAdminProvider: boolean) {
   const ownProviderSetting = await prisma.providerSetting.findUnique({
@@ -10,7 +11,7 @@ export async function getProviderSetting(userId: string, canUseAdminProvider: bo
     where: {
       enabled: true,
       provider: "openai-compatible",
-      user: { role: "admin", status: "approved", username: "koiyoho" },
+      user: { role: "admin", status: "approved", username: getAdminUsername() },
     },
   });
 }

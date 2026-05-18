@@ -2,7 +2,7 @@ import { compare, hash } from "bcryptjs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-import { isLocalVariant, localUserId } from "@/lib/app-variant";
+import { getAdminUsername, isLocalVariant, localUserId } from "@/lib/app-variant";
 import { prisma } from "@/lib/prisma";
 import { jsonError } from "./http";
 
@@ -101,7 +101,7 @@ export async function requireAdminUser(request: FastifyRequest, reply: FastifyRe
   const user = await requireCurrentUser(request, reply);
   if (!user) return null;
   if (isLocalVariant()) return user;
-  if (user.username !== "koiyoho" || user.role !== "admin") {
+  if (user.username !== getAdminUsername() || user.role !== "admin") {
     jsonError(reply, "Admin access required", 403);
     return null;
   }

@@ -172,7 +172,7 @@ test("validateDeployPackageManifest rejects protected file paths and manifest mi
   };
   assert.throws(
     () => validateDeployPackageManifest({
-      appName: "tldraw-ai-board",
+      appName: "local-ai-drawboard",
       channel: "local",
       commit: "abc123",
       entrypoint: "dist/server/server/index.js",
@@ -184,7 +184,7 @@ test("validateDeployPackageManifest rejects protected file paths and manifest mi
   );
   assert.throws(
     () => validateDeployPackageManifest({
-      appName: "tldraw-ai-board",
+      appName: "local-ai-drawboard",
       channel: "stable",
       commit: "abc123",
       entrypoint: "dist/server/server/index.js",

@@ -8,7 +8,7 @@ import { chromium } from "playwright";
 const baseUrl = process.env.SMOKE_BASE_URL ?? "http://localhost:3010";
 const dbPath = path.join(process.cwd(), "prisma", "dev.db");
 const runId = `smoke-${Date.now()}`;
-const adminUsername = "koiyoho";
+const adminUsername = process.env.ADMIN_USERNAME?.trim() || "admin";
 const adminPassword = `${runId}-admin-password`;
 const sharedPassword = "local-password-123";
 const userWithAdminApi = `${runId}-api-user`;

@@ -370,7 +370,7 @@ function startUpdaterProcess(jobId: string) {
   if (process.platform === "linux" && process.env.UPDATE_USE_SYSTEMD_RUN !== "0") {
     const child = spawn("systemd-run", [
       "--collect",
-      `--unit=tldraw-ai-board-updater-${jobId}`,
+      `--unit=local-ai-drawboard-updater-${jobId}`,
       `--working-directory=${process.cwd()}`,
       ...getSystemdRunEnvironmentArgs(),
       process.execPath,

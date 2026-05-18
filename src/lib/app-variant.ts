@@ -1,6 +1,7 @@
 export type AppVariant = "local" | "main";
 
 export const localUserId = "local-user";
+export const defaultAdminUsername = "admin";
 
 export function getAppVariant(): AppVariant {
   return process.env.APP_VARIANT === "local" ? "local" : "main";
@@ -8,6 +9,10 @@ export function getAppVariant(): AppVariant {
 
 export function isLocalVariant() {
   return getAppVariant() === "local";
+}
+
+export function getAdminUsername() {
+  return process.env.ADMIN_USERNAME?.trim() || (isLocalVariant() ? "local" : defaultAdminUsername);
 }
 
 export function getUpdateChannel() {

@@ -1,5 +1,11 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+# AGENTS.md
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+This project is a Vite + React + Fastify + Prisma application.
+
+Guidelines for coding agents:
+
+- Use PowerShell-compatible commands on Windows examples.
+- Prefer `rg` for search and `npm` scripts for validation.
+- Do not commit `.env`, local databases, uploads, generated images, build output, or dependency folders.
+- Run `npm run build` after changes that affect app code, server code, Prisma schema, or build configuration.
+- Keep public documentation focused on reproducible local setup and avoid private deployment notes.

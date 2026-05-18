@@ -12,13 +12,12 @@ import {
   isForbiddenDeployPackagePath,
 } from "./deploy-package-manifest.mjs";
 
-test("deploy package manifest includes runtime build outputs and service files", () => {
+test("deploy package manifest includes runtime build outputs", () => {
   assert(deployPackageEntries.includes("dist"));
   assert(deployPackageEntries.includes(deployManifestPath));
   assert(deployPackageEntries.includes("package.json"));
   assert(deployPackageEntries.includes("package-lock.json"));
   assert(deployPackageEntries.includes("prisma"));
-  assert(deployPackageEntries.includes("docs/tldraw-ai-board.service"));
 });
 
 test("deploy package manifest records required package metadata fields", () => {
@@ -52,7 +51,7 @@ test("system updater rejects protected package paths and arbitrary commands", as
   assert.throws(() => updater.getAllowedCommand("postinstallFromPackage"), /not allowed/);
   assert.deepEqual(updater.getAllowedCommand("restartGeminiBridgeService"), [
     "systemctl",
-    ["try-restart", "tldraw-ai-board-gemini-bridge.service"],
+    ["try-restart", "local-ai-drawboard-gemini-bridge.service"],
   ]);
 
   const tempDir = await mkdtemp(path.join(tmpdir(), "aiboard-updater-test-"));
@@ -112,7 +111,7 @@ test("system updater validates deploy manifest and extracted checksums", async (
       version: "1.2.3",
     };
     await writeFile(path.join(tempDir, "deploy-manifest.json"), `${JSON.stringify({
-      appName: "tldraw-ai-board",
+      appName: "local-ai-drawboard",
       channel: "local",
       commit: "abc123",
       entrypoint: "dist/server/server/index.js",

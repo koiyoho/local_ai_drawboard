@@ -62,7 +62,7 @@ export function AdminUserReview({
       <div className="section-title">
         <div>
           <h2>用户审核</h2>
-          <p className="muted">只有管理员 koiyoho 可以处理新用户注册和当前 API 授权。</p>
+          <p className="muted">只有管理员可以处理新用户注册和当前 API 授权。</p>
         </div>
         <div className="provider-title-actions">
           <span className="provider-badge">{users.length} 个待审核</span>

@@ -3,7 +3,7 @@ import { hash } from "bcryptjs";
 import { chromium } from "playwright";
 
 const baseUrl = process.env.SMOKE_BASE_URL ?? "http://taki999.f3322.org:3333";
-const adminUsername = "koiyoho";
+const adminUsername = process.env.ADMIN_USERNAME?.trim() || "admin";
 const adminPassword = `provider-card-${Date.now()}`;
 const db = new DatabaseSync("prisma/dev.db");
 let browser;

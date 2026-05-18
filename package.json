@@ -1,9 +1,10 @@
 {
-  "name": "tldraw-ai-board",
+  "name": "local-ai-drawboard",
   "version": "0.1.33",
   "private": true,
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
+    "setup:local": "node scripts/setup-local.mjs",
     "server:dev": "tsx server/index.ts",
     "gemini:bridge": "python scripts/gemini_webapi_openai_bridge.py",
     "gemini:import-auth": "node scripts/import-gemini-web-auth.mjs",

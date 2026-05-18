@@ -133,7 +133,7 @@ test("Gemini bridge status returns non-sensitive local configuration hints", asy
 
   const app = await createTestApp();
   try {
-    await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+    await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
       const cookie = await sessionCookieFor(user.id);
       const response = await app.inject({
         headers: { cookie },
@@ -174,7 +174,7 @@ test("Gemini bridge status returns non-sensitive local configuration hints", asy
 test("Gemini bridge auth import stores cookies locally without returning secrets", async () => {
   const app = await createTestApp();
   try {
-    await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+    await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
       const cookie = await sessionCookieFor(user.id);
       const saveResponse = await app.inject({
         headers: { cookie },
@@ -218,7 +218,7 @@ test("Gemini bridge auth import stores cookies locally without returning secrets
 test("Gemini bridge auth import accepts a full browser cookie JSON export", async () => {
   const app = await createTestApp();
   try {
-    await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+    await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
       const cookie = await sessionCookieFor(user.id);
       const cookieImport = JSON.stringify([
         { domain: ".google.com", name: "__Secure-1PSID", path: "/", value: "json-cookie-secret" },
@@ -274,7 +274,7 @@ test("Gemini bridge can create provider settings when no OpenAI-compatible API e
 
   const app = await createTestApp();
   try {
-    await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+    await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
       const cookie = await sessionCookieFor(user.id);
       const response = await app.inject({
         headers: { cookie },
@@ -311,7 +311,7 @@ test("Gemini bridge adds Gemini models without replacing an existing OpenAI-comp
 
   const app = await createTestApp();
   try {
-    await withTestUser({ exactUsername: true, role: "admin", username: "koiyoho" }, async (user) => {
+    await withTestUser({ exactUsername: true, role: "admin", username: "admin" }, async (user) => {
       await prisma.providerSetting.upsert({
         create: {
           apiKey: "third-party-secret",

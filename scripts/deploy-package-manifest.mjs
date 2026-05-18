@@ -6,7 +6,6 @@ export const deployPackageEntries = [
   "prisma",
   "prisma.config.ts",
   "scripts",
-  "docs/tldraw-ai-board.service",
 ];
 
 export const deployPackageExcludes = [

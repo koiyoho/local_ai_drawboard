@@ -137,7 +137,7 @@ test("provider settings save history and can be reapplied without exposing api k
 test("admin can publish enabled model options for frontend selection", async () => {
   const app = await createTestApp();
   try {
-    const admin = await createUser({ role: "admin", username: "koiyoho" });
+    const admin = await createUser({ role: "admin", username: "admin" });
     const cookie = await sessionCookieFor(admin.id);
 
     await app.inject({
@@ -188,7 +188,7 @@ test("admin can publish enabled model options for frontend selection", async () 
 test("frontend model options stay model-only when backend channels are configured", async () => {
   const app = await createTestApp();
   try {
-    const admin = await createUser({ role: "admin", username: "koiyoho" });
+    const admin = await createUser({ role: "admin", username: "admin" });
     const cookie = await sessionCookieFor(admin.id);
 
     await app.inject({
@@ -229,7 +229,7 @@ test("frontend model options stay model-only when backend channels are configure
 test("saving api settings keeps admin model pool and backend channels unchanged", async () => {
   const app = await createTestApp();
   try {
-    const admin = await createUser({ role: "admin", username: "koiyoho" });
+    const admin = await createUser({ role: "admin", username: "admin" });
     const cookie = await sessionCookieFor(admin.id);
 
     await app.inject({

@@ -7,6 +7,7 @@ import { removePureColorBackground } from "@/lib/background-removal";
 import { createProjectTimestampFilename } from "@/lib/filenames";
 import type { Asset } from "@/generated/prisma/client";
 import { createOpenAIClient, getTextModel } from "@/lib/openai";
+import { getAdminUsername } from "@/lib/app-variant";
 import { prisma } from "@/lib/prisma";
 import { getEnabledProviderModels } from "@/lib/provider-models";
 import { deleteLocalAssetFile, readAssetBytes, readOwnedAssetBytes, saveLocalAsset, type AssetKind } from "@/lib/storage";
@@ -130,7 +131,7 @@ export async function registerAssetRoutes(app: FastifyInstance) {
     const user = await requireCurrentUser(request, reply);
     if (!user) return;
     try {
-      const canReadAnyAsset = user.username === "koiyoho" && user.role === "admin";
+      const canReadAnyAsset = user.username === getAdminUsername() && user.role === "admin";
       const { asset, bytes } = canReadAnyAsset ? await readAssetBytes(request.params.assetId) : await readOwnedAssetBytes(request.params.assetId, user.id);
       reply.header("Cache-Control", "private, max-age=86400, stale-while-revalidate=604800");
       reply.header("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(path.basename(asset.storageKey))}`);

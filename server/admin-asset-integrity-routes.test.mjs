@@ -158,7 +158,7 @@ async function createUser({ role, username }) {
 }
 
 async function seedAssetState() {
-  const admin = await createUser({ role: "admin", username: "koiyoho" });
+  const admin = await createUser({ role: "admin", username: "admin" });
   const user = await createUser({ role: "user", username: "asset-owner" });
   const board = await prisma.board.create({ data: { name: "客户主视觉", userId: user.id } });
   const existingStorageKey = "uploads/board-a/generated/existing.png";

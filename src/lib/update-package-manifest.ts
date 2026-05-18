@@ -22,7 +22,7 @@ export const deployPackageFileSchema = z.object({
 });
 
 export const deployPackageManifestSchema = z.object({
-  appName: z.literal("tldraw-ai-board"),
+  appName: z.literal("local-ai-drawboard"),
   channel: z.string().trim().min(1),
   commit: z.string().trim().min(1),
   entrypoint: z.string().trim().min(1),
