@@ -14,7 +14,7 @@ await run("npm", ["run", "build"]);
 console.log("");
 console.log("Local setup complete.");
 console.log("Start the app with:");
-console.log("  npm run start -- --port 3010");
+console.log("  npm run start:local");
 console.log("");
 console.log("Then open http://localhost:3010");
 
