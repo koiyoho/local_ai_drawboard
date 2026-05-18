@@ -23,6 +23,7 @@ const promptAssistSchema = z.object({
   prompt: z.string().trim().min(1).max(20000),
   referenceContext: z.string().trim().max(2000).optional(),
 });
+const providerNotConfiguredMessage = "请先在本地设置中配置第三方 API、Gemini Bridge 或 Codex 兼容代理";
 
 export async function registerPromptAssistRoutes(app: FastifyInstance) {
   app.post("/api/prompt-assist", async (request, reply) => {
@@ -40,7 +41,7 @@ export async function registerPromptAssistRoutes(app: FastifyInstance) {
 
     const providerSetting = await getProviderSetting(user.id, user.canUseAdminProvider);
     if (!providerSetting?.enabled) {
-      return jsonError(reply, "请配置第三方 API 或联系管理员授权使用当前 API", 400);
+      return jsonError(reply, providerNotConfiguredMessage, 400);
     }
 
     try {

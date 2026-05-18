@@ -12,6 +12,7 @@ import {
   IconStar,
   IconUsage,
 } from "@/components/ui/icons";
+import { getClientAppVariant } from "@/lib/api-client";
 
 type BoardGlobalMenuProps = {
   boardId: string;
@@ -41,6 +42,7 @@ export function BoardGlobalMenu({
   const [draftName, setDraftName] = useState(boardName);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameMessage, setRenameMessage] = useState("");
+  const isLocal = getClientAppVariant() === "local";
 
   useEffect(() => {
     if (isOpen) {
@@ -139,13 +141,15 @@ export function BoardGlobalMenu({
           {isAdmin ? (
             <button onClick={() => runMenuAction(onOpenAdmin)} role="menuitem" type="button">
               <AppIcon icon={IconUsage} size="md" />
-              管理中心
+              {isLocal ? "本地设置" : "管理中心"}
             </button>
           ) : null}
-          <button onClick={() => runMenuAction(onSignOut)} role="menuitem" type="button">
-            <AppIcon icon={IconLogout} size="md" />
-            退出登录
-          </button>
+          {!isLocal ? (
+            <button onClick={() => runMenuAction(onSignOut)} role="menuitem" type="button">
+              <AppIcon icon={IconLogout} size="md" />
+              退出登录
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

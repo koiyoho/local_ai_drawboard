@@ -14,8 +14,8 @@ export function AccountActions({
   email?: string | null;
   name?: string | null;
 }) {
-  const label = name || email || "已登录账号";
   const isLocal = getClientAppVariant() === "local";
+  const label = isLocal ? "本地工作区" : name || email || "已登录账号";
 
   async function signOut(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

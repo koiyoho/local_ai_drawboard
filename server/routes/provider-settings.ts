@@ -18,6 +18,7 @@ import { getProviderSetting } from "../provider-settings-helper";
 
 const provider = "openai-compatible";
 const maxConfiguredModels = 24;
+const providerNotConfiguredMessage = "请先在本地设置中配置第三方 API、Gemini Bridge 或 Codex 兼容代理";
 const configuredModelSchema = z.object({
   channel: z.enum(["provider", "gemini-bridge", "codex"]).default(defaultProviderModelChannel),
   enabled: z.boolean().default(true),
@@ -62,7 +63,9 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
     const user = await requireCurrentUser(request, reply);
     if (!user) return;
     const providerSetting = await getProviderSetting(user.id, user.canUseAdminProvider);
-    if (!providerSetting?.enabled) return jsonError(reply, "请配置第三方 API 或联系管理员授权使用当前 API", 400);
+    if (!providerSetting?.enabled) {
+      return jsonError(reply, providerNotConfiguredMessage, 400);
+    }
     const fallbackModel = getImageModel(providerSetting);
     const configuredModels = providerSetting.enabledImageModels
       ? getEnabledProviderModels(providerSetting.enabledImageModels, fallbackModel)
@@ -88,7 +91,15 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
     const user = await requireCurrentUser(request, reply);
     if (!user) return;
     const providerSetting = await getProviderSetting(user.id, user.canUseAdminProvider);
-    if (!providerSetting?.enabled) return jsonError(reply, "请配置第三方 API 或联系管理员授权使用当前 API", 400);
+    if (!providerSetting?.enabled) {
+      return {
+        error: providerNotConfiguredMessage,
+        imageModels: [{ id: "gpt-image-2", label: "gpt-image-2" }],
+        reversePromptModels: [{ id: "gpt-5.5", label: "gpt-5.5" }],
+        selectedImageModel: "gpt-image-2",
+        selectedReversePromptModel: "gpt-5.5",
+      };
+    }
     const imageFallback = getImageModel(providerSetting);
     const reverseFallback = getTextModel(providerSetting);
     return {

@@ -74,11 +74,23 @@ export function AdminApp() {
   if (error) return <ErrorState message={error} />;
   if (!payload) return <LoadingState />;
 
-  const totalGeneratedImages = payload.adminUsageUsers.reduce((sum, user) => sum + user.generatedImageCount, 0);
-  const totalJobs = payload.adminUsageUsers.reduce((sum, user) => sum + user.totalJobCount, 0);
   const pendingReviewCount = payload.pendingReviewUsers.length;
   const missingAssetCount = payload.assetIntegrityReport.missingAssetCount ?? 0;
   const providerEnabled = Boolean(payload.providerSetting?.enabled);
+  const adminStats = isLocal
+    ? [
+        { label: "API 状态", value: providerEnabled ? "已启用" : "未配置" },
+        { label: "运行模式", value: "本地" },
+        { label: "用户模式", value: "单用户" },
+        { label: "更新通道", value: "Local" },
+      ]
+    : [
+        { label: "API 状态", value: providerEnabled ? "已启用" : "未配置" },
+        { label: "待审核", value: pendingReviewCount },
+        { label: "生成任务", value: payload.adminUsageUsers.reduce((sum, user) => sum + user.totalJobCount, 0) },
+        { label: "生成图片", value: payload.adminUsageUsers.reduce((sum, user) => sum + user.generatedImageCount, 0) },
+        { label: "缺失素材", value: missingAssetCount },
+      ];
 
   return (
     <main className="admin-shell">
@@ -86,20 +98,22 @@ export function AdminApp() {
         <div className="admin-topbar-main">
           <a href="/">返回画板</a>
           <div>
-            <strong>管理中心</strong>
-            <span>{isLocal ? "本地调试环境" : "生产管理环境"}</span>
+            <strong>{isLocal ? "本地设置" : "管理中心"}</strong>
+            <span>{isLocal ? "单用户本地环境" : "生产管理环境"}</span>
           </div>
         </div>
         <AccountActions email={payload.user.email} name={payload.user.name ?? payload.user.username} />
       </header>
       <section className="admin-overview" aria-labelledby="admin-overview-title">
         <div className="admin-overview-copy">
-          <p className="eyebrow">Admin Console</p>
-          <h1 id="admin-overview-title">系统、模型和用户运营</h1>
+          <p className="eyebrow">{isLocal ? "Local Settings" : "Admin Console"}</p>
+          <h1 id="admin-overview-title">{isLocal ? "本地模型、接口和系统设置" : "系统、模型和用户运营"}</h1>
           <p>
-            集中处理第三方接口、官方登录、在线升级、用户审核、生成额度和素材一致性。
+            {isLocal
+              ? "配置本机使用的第三方接口、模型池、Gemini Bridge、Codex 凭据和更新流程。"
+              : "集中处理第三方接口、官方登录、在线升级、用户审核、生成额度和素材一致性。"}
           </p>
-          <nav className="admin-quick-nav" aria-label="管理快捷入口">
+          <nav className="admin-quick-nav" aria-label={isLocal ? "本地设置快捷入口" : "管理快捷入口"}>
             <a href="#provider-settings">
               <AppIcon icon={IconApiKey} size="sm" />
               接口配置
@@ -127,26 +141,12 @@ export function AdminApp() {
           </nav>
         </div>
         <div className="admin-overview-stats">
-          <div>
-            <span>API 状态</span>
-            <strong>{providerEnabled ? "已启用" : "未配置"}</strong>
-          </div>
-          <div>
-            <span>待审核</span>
-            <strong>{pendingReviewCount}</strong>
-          </div>
-          <div>
-            <span>生成任务</span>
-            <strong>{totalJobs}</strong>
-          </div>
-          <div>
-            <span>生成图片</span>
-            <strong>{totalGeneratedImages}</strong>
-          </div>
-          <div>
-            <span>缺失素材</span>
-            <strong>{missingAssetCount}</strong>
-          </div>
+          {adminStats.map((item) => (
+            <div key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
         </div>
       </section>
       <section className={isLocal ? "admin-content admin-content-local" : "admin-content"}>
@@ -191,8 +191,8 @@ export function AdminApp() {
           <aside className="admin-local-note" aria-label="本地管理说明">
             <AppIcon icon={IconAssets} size="lg" />
             <div>
-              <h2>本地模式</h2>
-              <p>本地模式隐藏用户审核、用量统计和素材一致性检查；接口、模型和升级流程仍可调试。</p>
+              <h2>单用户本地版</h2>
+              <p>当前工作区只服务本机使用者，不启用登录、注册审核、用户配额或多用户运营面板；画板、素材和配置保存在这台机器上。</p>
             </div>
           </aside>
         )}

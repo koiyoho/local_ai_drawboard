@@ -66,15 +66,15 @@ export function useCodexAuthStatus() {
 
 export function getCodexAccountLabel(status: CodexAuthStatus) {
   if (!status.connected) {
-    return "未登录";
+    return "未授权";
   }
-  return status.accountId || status.organizationId || status.projectId || "已登录";
+  return status.accountId || status.organizationId || status.projectId || "已授权";
 }
 
 function getCodexCapabilityLabel(status: CodexAuthStatus) {
   if (!status.connected) return "未连接";
   if (status.hasApiKey) return "Images API 可用";
-  return "账号已登录，图片 API 需代理";
+  return "已保存凭据，图片 API 需代理";
 }
 
 export function CodexLoginCard() {
@@ -87,7 +87,7 @@ export function CodexLoginCard() {
   const accountLabel = getCodexAccountLabel(status);
   const startAvailable = Boolean(status.startAvailable);
   const importAvailable = Boolean(status.importSourceAvailable);
-  const importCommand = "复制本机 C:\\Users\\<你的用户名>\\.codex\\auth.json 到服务器项目 .codex\\codex-auth.json，或在服务器同用户下点击导入。";
+  const importCommand = "复制本机 C:\\Users\\<你的用户名>\\.codex\\auth.json 到当前项目 .codex\\codex-auth.json，或在同一台机器上点击导入。";
   const capabilityLabel = getCodexCapabilityLabel(status);
 
   async function importCliAuth() {
@@ -96,11 +96,11 @@ export function CodexLoginCard() {
     try {
       const response = await apiFetch("/api/codex-auth/import-cli", { method: "POST" });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? "导入 Codex CLI 登录失败");
-      setMessage("已导入本机 Codex 登录信息");
+      if (!response.ok) throw new Error(payload.error ?? "导入 Codex CLI 凭据失败");
+      setMessage("已导入本机 Codex 凭据");
       window.setTimeout(() => window.location.reload(), 650);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "导入 Codex CLI 登录失败");
+      setMessage(error instanceof Error ? error.message : "导入 Codex CLI 凭据失败");
     } finally {
       setIsImporting(false);
     }
@@ -131,7 +131,7 @@ export function CodexLoginCard() {
     if (!file) return;
     try {
       setAuthJson(await file.text());
-      setMessage("已读取 auth.json，点击导入 auth.json 保存到服务器");
+      setMessage("已读取 auth.json，点击导入 auth.json 保存到当前项目");
     } catch {
       setMessage("读取 auth.json 文件失败");
     }
@@ -147,7 +147,7 @@ export function CodexLoginCard() {
   }
 
   return (
-    <section aria-label="官方 Codex 登录" className="codex-login-card">
+    <section aria-label="官方 Codex 凭据" className="codex-login-card">
       <div className="codex-login-card-icon">
         <AppIcon icon={IconBot} size={20} />
       </div>
@@ -177,10 +177,10 @@ export function CodexLoginCard() {
             {isLoading
               ? "正在检查连接状态"
               : status.connected
-                ? `账号 ${accountLabel}${status.planType ? ` · ${status.planType}` : ""} · ${capabilityLabel}`
+                ? `凭据 ${accountLabel}${status.planType ? ` · ${status.planType}` : ""} · ${capabilityLabel}`
                 : startAvailable
-                  ? "可通过官方 OAuth 登录"
-                  : "OAuth 回调不可用，可导入本机 CLI 登录"}
+                  ? "可通过官方 OAuth 保存凭据"
+                  : "OAuth 回调不可用，可导入本机 CLI 凭据"}
           </p>
         ) : (
           <div className="codex-login-expanded" id="codex-login-body">
@@ -188,10 +188,10 @@ export function CodexLoginCard() {
               {isLoading
                 ? "正在检查连接状态"
                 : status.connected
-                  ? `已保存登录信息${status.planType ? ` · ${status.planType}` : ""}。${status.hasApiKey ? "当前可作为 OpenAI Images API 凭证使用。" : "官方 Codex 账号 OAuth 不等同于 OpenAI Images API key；图片模型请配置 Codex 兼容代理或改用其他通道。"}`
+                  ? `已保存凭据${status.planType ? ` · ${status.planType}` : ""}。${status.hasApiKey ? "当前可作为 OpenAI Images API 凭证使用。" : "官方 Codex OAuth 不等同于 OpenAI Images API key；图片模型请配置 Codex 兼容代理或改用其他通道。"}`
                   : startAvailable
-                    ? "可通过官方 OAuth 保存本地登录信息"
-                    : "线上 OAuth 回调不可用，请导入本机 Codex CLI 登录"}
+                    ? "可通过官方 OAuth 保存本地凭据"
+                    : "OAuth 回调不可用，请导入本机 Codex CLI 凭据"}
             </p>
             <span>{accountLabel}</span>
             {!status.connected && status.startDisabledReason ? (
@@ -218,11 +218,11 @@ export function CodexLoginCard() {
               target={startAvailable ? "_blank" : undefined}
             >
               {status.connected ? <AppIcon icon={IconRefresh} size="md" /> : <AppIcon icon={IconExternalLink} size="md" />}
-              {status.connected ? "重新登录" : "OAuth 登录"}
+              {status.connected ? "更新授权" : "OAuth 授权"}
             </a>
             <button disabled={isImporting || !importAvailable} onClick={() => void importCliAuth()} type="button">
               <AppIcon icon={IconSave} size="md" />
-              {isImporting ? "导入中" : "导入服务器 CLI"}
+              {isImporting ? "导入中" : "导入本机 CLI"}
             </button>
             <button className="secondary-action" onClick={() => void copyImportCommand()} type="button">
               <AppIcon icon={IconCopy} size="md" />

@@ -55,9 +55,9 @@ export function BoardList({
   const [boards, setBoards] = useState(initialBoards);
   const [name, setName] = useState("未命名画板");
   const [isPending, startTransition] = useTransition();
-  const isAdminSettings = Boolean(initialAdminUsageUsers || initialPendingReviewUsers);
   const assetCount = boards.reduce((sum, board) => sum + board._count.assets, 0);
   const jobCount = boards.reduce((sum, board) => sum + board._count.jobs, 0);
+  const isMultiUserAdminSettings = Boolean(initialAdminUsageUsers || initialPendingReviewUsers);
   const pendingReviewCount = initialPendingReviewUsers?.length ?? 0;
   const adminUserCount = initialAdminUsageUsers?.length ?? 0;
   const [providerSetting, setProviderSetting] = useState(initialProviderSetting);
@@ -260,7 +260,7 @@ export function BoardList({
         <aside className="home-side-column">
           <section aria-label="管理设置" className="admin-settings-landing">
             <div>
-              <h2>管理中心</h2>
+              <h2>本地设置</h2>
             </div>
             <div className="admin-settings-landing-grid">
               {showProviderSettings ? (
@@ -273,7 +273,17 @@ export function BoardList({
                   <strong>{providerSetting?.enabled ? "已启用" : "未配置"}</strong>
                 </a>
               ) : null}
-              {isAdminSettings ? (
+              {showProviderSettings ? (
+                <a
+                  href="#provider-model-pool"
+                  onClick={() => setIsModelPoolExpanded(true)}
+                >
+                  <AppIcon icon={IconAi} size="lg" />
+                  <span>模型池</span>
+                  <strong>{providerSetting?.enabled ? "可配置" : "待配置 API"}</strong>
+                </a>
+              ) : null}
+              {isMultiUserAdminSettings ? (
                 <>
                   <a href="#admin-review">
                     <AppIcon icon={IconReview} size="lg" />
@@ -287,7 +297,7 @@ export function BoardList({
                   </a>
                 </>
               ) : null}
-              {!showProviderSettings && !isAdminSettings ? (
+              {!showProviderSettings && !isMultiUserAdminSettings ? (
                 <div className="admin-settings-placeholder">
                   <AppIcon icon={IconReview} size="lg" />
                   <span>API 已授权</span>
@@ -305,18 +315,16 @@ export function BoardList({
                 onExpandedChange={setIsProviderSettingsExpanded}
                 onSettingChange={setProviderSetting}
               />
-              {isAdminSettings ? (
-                <ProviderModelPoolSettings
-                  initialSetting={providerSetting}
-                  isExpanded={isModelPoolExpanded}
-                  onExpandedChange={setIsModelPoolExpanded}
-                  onSettingChange={setProviderSetting}
-                />
-              ) : null}
+              <ProviderModelPoolSettings
+                initialSetting={providerSetting}
+                isExpanded={isModelPoolExpanded}
+                onExpandedChange={setIsModelPoolExpanded}
+                onSettingChange={setProviderSetting}
+              />
             </>
           ) : null}
 
-          {isAdminSettings ? <CodexLoginCard /> : null}
+          {isMultiUserAdminSettings ? <CodexLoginCard /> : null}
 
           {initialPendingReviewUsers ? (
             <AdminUserReview initialUsers={initialPendingReviewUsers} />

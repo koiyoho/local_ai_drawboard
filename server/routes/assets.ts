@@ -21,6 +21,7 @@ const listableKinds = new Set<AssetKind>(["upload", "generated", "source", "mask
 const reversePromptInstruction = `你是一名专业 AI 图像提示词分析师。请观察用户上传的参考图，只输出可直接复制到 AI 生图工具里的中文提示词正文。不要输出标题、前置说明、后置解释、引号、Markdown、编号列表或“以下是/提示词如下”等包装文案。`;
 const MAX_ASSET_TAGS = 12;
 const MAX_ASSET_TAG_LENGTH = 24;
+const providerNotConfiguredMessage = "请先在本地设置中配置第三方 API、Gemini Bridge 或 Codex 兼容代理";
 const assetTagPattern = /^[\p{Script=Han}\p{L}\p{N}_ -]+$/u;
 const assetMetadataSchema = z.object({
   isFavorite: z.boolean().optional(),
@@ -183,7 +184,7 @@ export async function registerAssetRoutes(app: FastifyInstance) {
     const parsed = parseBody(reversePromptSchema, request.body ?? {});
     if (!parsed.ok) return jsonError(reply, parsed.error);
     const providerSetting = await getProviderSetting(user.id, user.canUseAdminProvider);
-    if (!providerSetting?.enabled) return jsonError(reply, "请配置第三方 API 或联系管理员授权使用当前 API", 400);
+    if (!providerSetting?.enabled) return jsonError(reply, providerNotConfiguredMessage, 400);
     try {
       const { asset, bytes } = await readOwnedAssetBytes(request.params.assetId, user.id);
       if (!asset.mimeType.startsWith("image/")) return jsonError(reply, "仅支持图片素材反推提示词", 400);

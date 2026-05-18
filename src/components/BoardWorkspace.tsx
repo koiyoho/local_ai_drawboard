@@ -1168,6 +1168,10 @@ export function BoardWorkspace({
           selectedReversePromptModel?: string;
         };
         if (isCancelled) return;
+        if (!response.ok) {
+          setImageModelStatus(payload.error ?? "请先在本地设置中配置模型接口");
+          return;
+        }
         const nextImageModels = Array.isArray(payload.imageModels) ? payload.imageModels : payload.models;
         if (Array.isArray(nextImageModels) && nextImageModels.length > 0) {
           setImageModelOptions(nextImageModels);

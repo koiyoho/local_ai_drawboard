@@ -54,6 +54,7 @@ const generateFrameSchema = z.object({
   frame: z.enum(["start", "end"]),
   size: imageGenerationInputSchema.shape.size.default("1024x1024"),
 });
+const providerNotConfiguredMessage = "请先在本地设置中配置第三方 API、Gemini Bridge 或 Codex 兼容代理";
 
 export type StoryboardTextModelCaller = (
   providerSetting: NonNullable<Awaited<ReturnType<typeof getProviderSetting>>>,
@@ -126,7 +127,7 @@ export async function registerStoryboardRoutes(app: FastifyInstance, options: St
     if (!board) return jsonError(reply, "Board not found", 404);
     const providerSetting = await getProviderSetting(user.id, user.canUseAdminProvider);
     if (!providerSetting?.enabled) {
-      return jsonError(reply, "请配置第三方 API 或联系管理员授权使用当前 API", 400);
+      return jsonError(reply, providerNotConfiguredMessage, 400);
     }
     const existing = await ensureStoryboardProject(board.id);
     const brief = mergeStoryboardBriefPatch(existing.brief, parsed.data.brief);
@@ -290,7 +291,7 @@ export async function registerStoryboardRoutes(app: FastifyInstance, options: St
     const project = await prisma.storyboardProject.findUniqueOrThrow({ where: { id: shot.projectId } });
     const providerSetting = await getProviderSetting(user.id, user.canUseAdminProvider);
     if (!providerSetting?.enabled) {
-      return jsonError(reply, "请配置第三方 API 或联系管理员授权使用当前 API", 400);
+      return jsonError(reply, providerNotConfiguredMessage, 400);
     }
     try {
       const updated = await generateAndUpdateShotPrompts({
@@ -321,7 +322,7 @@ export async function registerStoryboardRoutes(app: FastifyInstance, options: St
     }
     const providerSetting = await getProviderSetting(user.id, user.canUseAdminProvider);
     if (!providerSetting?.enabled) {
-      return jsonError(reply, "请配置第三方 API 或联系管理员授权使用当前 API", 400);
+      return jsonError(reply, providerNotConfiguredMessage, 400);
     }
     try {
       for (const shot of targets) {

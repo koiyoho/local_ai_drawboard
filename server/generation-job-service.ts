@@ -26,6 +26,7 @@ export const referenceItemSchema = z.object({
 });
 const geminiBridgeImageModels = new Set(["gemini-web", "nano-banana"]);
 const geminiBridgeDisplayName = "Gemini Web Bridge";
+const providerNotConfiguredMessage = "请先在本地设置中配置第三方 API、Gemini Bridge 或 Codex 兼容代理";
 
 export const imageGenerationInputSchema = z.object({
   boardId: z.string().min(1),
@@ -61,7 +62,7 @@ export async function createImageGenerationJob(input: CreateGenerationJobInput) 
   const providerSetting = await getProviderSetting(input.user.id, input.user.canUseAdminProvider);
   const providerOwner = providerSetting?.userId === input.user.id ? "self" : "admin";
   if (!providerSetting?.enabled) {
-    return { ok: false as const, error: "请配置第三方 API 或联系管理员授权使用当前 API", statusCode: 400 };
+    return { ok: false as const, error: providerNotConfiguredMessage, statusCode: 400 };
   }
 
   const model = input.generation.model ?? getImageModel(providerSetting);
@@ -265,15 +266,15 @@ async function getGenerationQuotaError(input: { count: number; generationFiveHou
   if (input.generationLimit !== null) {
     const totalUsedCount = await prisma.generationResult.count({ where: { job: { board: { userId: input.userId } } } });
     const remainingTotalCount = input.generationLimit - totalUsedCount;
-    if (remainingTotalCount <= 0) return "当前账号总生成次数已用完，请联系管理员调整使用上限";
-    if (input.count > remainingTotalCount) return `当前账号总额度剩余 ${remainingTotalCount} 张，请降低生成张数`;
+    if (remainingTotalCount <= 0) return "当前生成次数已用完，请调整本地使用上限或清理生成记录";
+    if (input.count > remainingTotalCount) return `当前生成次数剩余 ${remainingTotalCount} 张，请降低生成张数`;
   }
   if (input.generationFiveHourLimit !== null) {
     const fiveHourWindowStart = new Date(Date.now() - 5 * 60 * 60 * 1000);
     const windowUsedCount = await prisma.generationResult.count({ where: { createdAt: { gte: fiveHourWindowStart }, job: { board: { userId: input.userId } } } });
     const remainingWindowCount = input.generationFiveHourLimit - windowUsedCount;
-    if (remainingWindowCount <= 0) return "当前账号最近 5 小时生成次数已用完，请稍后再试或联系管理员调整限制";
-    if (input.count > remainingWindowCount) return `当前账号最近 5 小时额度剩余 ${remainingWindowCount} 张，请降低生成张数`;
+    if (remainingWindowCount <= 0) return "最近 5 小时生成次数已用完，请稍后再试或调整本地使用上限";
+    if (input.count > remainingWindowCount) return `最近 5 小时生成次数剩余 ${remainingWindowCount} 张，请降低生成张数`;
   }
   return null;
 }
@@ -320,7 +321,7 @@ async function getImageGenerationProviderSetting(providerSetting: ProviderSettin
     }
     const apiKey = await readCodexApiKey();
     if (!apiKey) {
-      throw new Error("官方 Codex 已登录的是账号 OAuth token，不是 OpenAI Images API key。请配置 CODEX_IMAGE_PROXY_BASE_URL 指向 CLIProxyAPI 等 OpenAI 兼容代理，或把该模型通道改为第三方 API/Gemini Bridge");
+      throw new Error("官方 Codex OAuth token 不是 OpenAI Images API key。请在本机配置 CODEX_IMAGE_PROXY_BASE_URL 指向 CLIProxyAPI 等 OpenAI 兼容代理，或把该模型通道改为第三方 API/Gemini Bridge");
     }
     return {
       ...providerSetting,

@@ -292,7 +292,7 @@ export function ProviderModelPoolSettings({
       setTextModel(payload.providerSetting.textModel);
       setImageModels(getInitialImageModels(payload.providerSetting));
       setReversePromptModels(getInitialReversePromptModels(payload.providerSetting));
-      setStatus("模型池和后台通道已保存");
+      setStatus("模型池和调用通道已保存");
     });
   }
 
@@ -321,13 +321,13 @@ export function ProviderModelPoolSettings({
       {!isExpanded ? (
         <p className="provider-collapsed-summary">
           {setting?.enabled
-            ? `生图/改图 ${imageEnabledCount} 个 · 反推/提示词 ${textEnabledCount} 个 · 后台通道由管理员在此配置`
+            ? `生图/改图 ${imageEnabledCount} 个 · 反推/提示词 ${textEnabledCount} 个 · 本地调用通道已配置`
             : "先保存第三方 API 设置后，再配置前台可见模型和后台调用通道。"}
         </p>
       ) : (
         <div className="provider-model-pool-body" id="provider-model-pool-body">
           <p className="provider-field-hint">
-            前台只展示模型名称；每个模型实际走第三方 API、官方 Codex 代理还是 Gemini Bridge，由这里统一配置。官方 Codex 账号 OAuth 本身不是图片 API key，Codex 图片通道需要服务器配置 CODEX_IMAGE_PROXY_BASE_URL。
+            前台只展示模型名称；每个模型实际走第三方 API、Codex 兼容代理还是 Gemini Bridge，由这里统一配置。官方 Codex OAuth 本身不是图片 API key，Codex 图片通道需要本机环境配置 CODEX_IMAGE_PROXY_BASE_URL。
           </p>
           <ModelListEditor
             fallbackModel={imageModel}
@@ -490,7 +490,7 @@ function ModelListEditor({
               启用
             </label>
             <label>
-              后台通道
+              调用通道
               <select
                 onChange={(event) => updateModel(index, { channel: event.target.value as ProviderModelChannel })}
                 value={model.channel ?? defaultProviderModelChannel}

@@ -210,8 +210,8 @@ export async function handleCodexCallback(requestUrl: URL) {
   if (!pending) {
     return {
       body: renderCallbackPage(
-        "Codex 登录失败",
-        "未找到本项目发起的登录状态，请从工作台重新打开登录入口。",
+        "Codex 授权失败",
+        "未找到本项目发起的授权状态，请从工作台重新打开授权入口。",
         "/",
       ),
       status: 400,
@@ -221,22 +221,22 @@ export async function handleCodexCallback(requestUrl: URL) {
   const fail = async (message: string, status = 400) => {
     await clearPendingOAuthState();
     return {
-      body: renderCallbackPage("Codex 登录失败", escapeHtml(message), pending.returnUrl),
+      body: renderCallbackPage("Codex 授权失败", escapeHtml(message), pending.returnUrl),
       status,
     };
   };
 
   const callbackState = requestUrl.searchParams.get("state");
   if (!callbackState || callbackState !== pending.state) {
-    return fail("登录回调状态不匹配，请重新发起登录。");
+    return fail("授权回调状态不匹配，请重新发起授权。");
   }
 
   if (isPendingExpired(pending)) {
-    return fail("登录状态已过期，请重新发起登录。");
+    return fail("授权状态已过期，请重新发起授权。");
   }
 
   if (!verifyAdminSessionProof(pending.adminProof)) {
-    return fail("管理员会话证明无效，请重新发起登录。", 403);
+    return fail("本地授权会话证明无效，请重新发起授权。", 403);
   }
 
   const oauthError = requestUrl.searchParams.get("error");
@@ -246,7 +246,7 @@ export async function handleCodexCallback(requestUrl: URL) {
 
   const code = requestUrl.searchParams.get("code");
   if (!code) {
-    return fail("登录回调缺少授权 code。");
+    return fail("授权回调缺少授权 code。");
   }
 
   try {
@@ -270,8 +270,8 @@ export async function handleCodexCallback(requestUrl: URL) {
 
     return {
       body: renderCallbackPage(
-        "Codex 登录已保存",
-        "OAuth 登录信息已保存到项目本地 .codex/codex-auth.json。",
+        "Codex 授权已保存",
+        "OAuth 凭据已保存到项目本地 .codex/codex-auth.json。",
         pending.returnUrl,
       ),
       status: 200,
@@ -461,7 +461,7 @@ async function ensureCodexCallbackServer() {
     } catch (error) {
       const message = toSafeOAuthError(error);
       response.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-      response.end(renderCallbackPage("Codex 登录失败", escapeHtml(message), "/"));
+      response.end(renderCallbackPage("Codex 授权失败", escapeHtml(message), "/"));
     }
   });
 

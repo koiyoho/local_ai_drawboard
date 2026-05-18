@@ -54,7 +54,7 @@ export function GeminiBridgeCard() {
     if (!status) return "";
     return [
       `Base URL: ${status.bridgeBaseUrl}`,
-      `API Key: ${status.hasApiKey ? "使用服务器生成的 GEMINI_BRIDGE_API_KEY" : "需要管理员在服务器 .env 生成 GEMINI_BRIDGE_API_KEY"}`,
+      `API Key: ${status.hasApiKey ? "使用本机 .env 中的 GEMINI_BRIDGE_API_KEY" : "需要在本机 .env 生成 GEMINI_BRIDGE_API_KEY"}`,
       `图片模型: ${status.imageModel}`,
       `提示词模型: ${status.textModel}`,
     ].join("\n");
@@ -83,7 +83,7 @@ export function GeminiBridgeCard() {
       setCookieImport("");
       setSecure1psid("");
       setSecure1psidts("");
-      setMessage(payload.cookieCount ? `Gemini Cookie 已导入服务器，包含 ${payload.cookieCount} 条完整 Cookie` : "Gemini Cookie 已导入服务器");
+      setMessage(payload.cookieCount ? `Gemini Cookie 已导入本机项目，包含 ${payload.cookieCount} 条完整 Cookie` : "Gemini Cookie 已导入本机项目");
       await loadStatus();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "保存 Gemini Cookie 失败");
@@ -154,13 +154,13 @@ export function GeminiBridgeCard() {
               <StatusItem label="Cookie" value={status?.hasSecure1psid ? "已设置" : "缺少 __Secure-1PSID"} />
               <StatusItem label="会话时间戳" value={status?.hasSecure1psidts ? "已设置" : "可选"} />
               <StatusItem label="完整 Cookie" value={status?.hasFullCookies ? "已导入" : "未导入"} />
-              <StatusItem label="桥接密钥" value={status?.hasApiKey ? "已设置" : "缺少服务器密钥"} />
+              <StatusItem label="桥接密钥" value={status?.hasApiKey ? "已设置" : "缺少本机密钥"} />
               <StatusItem label="桥接服务" value={status?.bridgeHealth === "online" ? "运行中" : status?.bridgeHealth === "error" ? "响应异常" : "未启动"} />
               <StatusItem label="本地地址" value={status?.bridgeBaseUrl ?? "读取中"} />
             </div>
             {!isLoading && missingItems.length > 0 ? (
               <p className="gemini-cookie-note">
-                还缺少：{missingItems.join("、")}。桥接访问密钥不是 Google API Key，由服务器管理员生成并写入 `.env`；Cookie 可在本页粘贴导入。
+                还缺少：{missingItems.join("、")}。桥接访问密钥不是 Google API Key，需要写入本机 `.env`；Cookie 可在本页粘贴导入。
               </p>
             ) : null}
             {status ? (
