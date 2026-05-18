@@ -54,7 +54,6 @@ import {
   IconRefresh,
   IconSendBackward,
   IconSendToBack,
-  IconShape,
   IconStar,
   IconUndo,
   IconSave,
@@ -665,7 +664,7 @@ export function BoardWorkspace({
   const [mobileDraftStroke, setMobileDraftStroke] = useState<MaskStroke>([]);
   const [mobileMaskColor, setMobileMaskColor] = useState("");
   const [mobileMaskRedoStrokes, setMobileMaskRedoStrokes] = useState<MaskStroke[]>([]);
-  const [mobileSourceZoom, setMobileSourceZoom] = useState(1);
+  const [mobileSourceZoom] = useState(1);
   const [isMobileSyncing, setIsMobileSyncing] = useState(false);
   const [assetPreviewAsset, setAssetPreviewAsset] = useState<AssetPayload | null>(null);
   const [assetPreviewZoom, setAssetPreviewZoom] = useState(1);
@@ -746,11 +745,6 @@ export function BoardWorkspace({
   const selectedCanvasAsset = selectedImageObject
     ? imageAssets.find((asset) => asset.id === selectedImageObject.assetId) ?? null
     : null;
-  const selectedCanvasAssetJob = selectedCanvasAsset
-    ? getGenerationJobForAsset(board.jobs, selectedCanvasAsset.id)
-    : null;
-  const selectedCanvasPrompt =
-    selectedCanvasAssetJob?.prompt ?? (selectedCanvasAsset ? reversePromptByAssetId[selectedCanvasAsset.id] : "") ?? "";
   const selectedImageToolbarPosition = useMemo(() => {
     if (!selectedImageObject) return null;
     const bounds = getObjectBounds(selectedImageObject);
@@ -3683,12 +3677,6 @@ export function BoardWorkspace({
     setStatus("已重置涂抹区域");
   }
 
-  function selectMobileMaskColor(color: string) {
-    const next = mobileMaskColor === color ? "" : color;
-    setMobileMaskColor(next);
-    setStatus(next ? "已选择涂抹颜色，可在源图上标记区域" : "已关闭涂抹，当前可拖动查看放大后的源图");
-  }
-
   function updateSourcePromptDraft(value: string) {
     setSourcePrompt(value);
     scheduleSave({ appSnapshot: { sourcePrompt: value } });
@@ -4121,125 +4109,6 @@ export function BoardWorkspace({
               {option.label}
             </button>
           ))}
-        </div>
-      </section>
-    );
-  }
-
-  function renderDesktopEditContextPanel() {
-    const sourceStatus = sourceAsset ? "源图已就绪" : "等待源图";
-    const referenceStatus = referenceAssets.length > 0 ? `${referenceAssets.length} 张参考` : "无参考图";
-    const activeReferenceRoleItem =
-      referenceAssets.find((item) => item.asset.id === openReferenceRoleAssetId) ?? null;
-    const contextStatus = !sourceAsset
-      ? "需补源图"
-      : !prompt.trim()
-        ? "需补修改要求"
-        : "可改图";
-    return (
-      <section className="panel-section desktop-edit-context-section">
-        <div className="section-title">
-          <span>1. 当前上下文</span>
-          <span className="pill">{contextStatus} · {referenceStatus}</span>
-        </div>
-        <div className="desktop-edit-context-grid">
-          <div className="desktop-context-source desktop-context-source-compact">
-            <div className="desktop-context-heading">
-              <div className="desktop-context-title-stack">
-                <span>源图</span>
-                <em>{sourceAsset ? sourceAssetKindLabel : "上传或从素材载入"}</em>
-              </div>
-            </div>
-            <div className="image-drop">
-              {sourceAsset ? (
-                <>
-                  <img alt="" src={apiUrl(sourceAsset.publicUrl)} />
-                  <button
-                    aria-label="移除当前源图"
-                    className="image-clear-button"
-                    onClick={clearSourceAsset}
-                    type="button"
-                  >
-                    <AppIcon icon={IconClose} size="sm" />
-                  </button>
-                </>
-              ) : (
-                <label>
-                  <AppIcon icon={IconAddImage} size={20} />
-                  上传源图
-                  <input
-                    accept="image/*"
-                    onChange={(event) => {
-                      handleUpload(event.target.files?.[0]);
-                      event.currentTarget.value = "";
-                    }}
-                    suppressHydrationWarning
-                    type="file"
-                  />
-                </label>
-              )}
-            </div>
-            {sourceAsset ? (
-              <div className="desktop-source-meta">
-                <span>{sourceAssetDimensions}</span>
-                <span>{assetKindLabels[sourceAsset.kind] ?? sourceAsset.kind}</span>
-                <span>{formatDateTime(sourceAsset.createdAt)}</span>
-              </div>
-            ) : null}
-          </div>
-          <div hidden className="desktop-context-reference desktop-context-reference-inline">
-            <div className="desktop-context-heading">
-              <div className="desktop-context-title-stack">
-                <span>参考图</span>
-                <em>{referenceAssets.length > 0 ? `${referenceAssets.length} 张 · 全部可标记` : "用于角色、风格、构图约束"}</em>
-              </div>
-              <div className="desktop-context-heading-actions">
-                <label className="upload-inline">
-                  <AppIcon icon={IconPlus} size="md" />
-                  添加
-                  <input
-                    accept="image/*"
-                    multiple
-                    onChange={(event) => {
-                      handleReferenceUpload(event.target.files);
-                      event.currentTarget.value = "";
-                    }}
-                    suppressHydrationWarning
-                    type="file"
-                  />
-                </label>
-                <button disabled={referenceAssets.length === 0} onClick={clearReferenceAssets} type="button">
-                  清空
-                </button>
-              </div>
-            </div>
-            <div className="desktop-context-reference-grid">
-              {renderGroupedReferenceList("desktop-edit-context")}
-            </div>
-            {activeReferenceRoleItem ? renderReferenceRolePanel(activeReferenceRoleItem) : null}
-            <div className="reference-preset-row" aria-label="参考图预设">
-              <button onClick={() => applyReferencePreset("outfit")} type="button">人物换装</button>
-              <button onClick={() => applyReferencePreset("product")} type="button">商品替换</button>
-              <button onClick={() => applyReferencePreset("logo")} type="button">Logo 融合</button>
-              <button onClick={() => applyReferencePreset("scene")} type="button">场景重构</button>
-            </div>
-            {renderReferenceConflictControls()}
-            <div className="desktop-context-reference-actions">
-              <label className="select-field">
-                参考匹配
-                <select onChange={(event) => setReferenceFit(event.target.value as ReferenceFit)} value={referenceFit}>
-                  {referenceFitOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="reference-fit-note">
-                标记决定每张参考图“用来参考什么”；参考匹配决定整体贴合强度。
-              </p>
-            </div>
-          </div>
         </div>
       </section>
     );
@@ -7877,3 +7746,4 @@ function delay(ms: number) {
     window.setTimeout(resolve, ms);
   });
 }
+
