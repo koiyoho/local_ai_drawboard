@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 
 import { createApp } from "./app";
 
-const port = Number(process.env.PORT ?? 3333);
+const port = Number(process.env.PORT ?? getArgValue("--port") ?? 3333);
 const host = process.env.HOST ?? "0.0.0.0";
 const execFileAsync = promisify(execFile);
 
@@ -16,3 +16,9 @@ async function main() {
 }
 
 void main();
+
+function getArgValue(name: string) {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return undefined;
+  return process.argv[index + 1];
+}

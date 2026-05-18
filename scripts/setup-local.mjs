@@ -63,7 +63,7 @@ function run(command, args) {
   const display = [command, ...args].join(" ");
   console.log(`\n> ${display}`);
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { shell: false, stdio: "inherit" });
+    const child = spawn(executable, args, { stdio: "inherit" });
     child.on("error", reject);
     child.on("exit", (code) => {
       if (code === 0) resolve();
