@@ -59,11 +59,12 @@ function ensureEnvLine(envText, key, value) {
 }
 
 function run(command, args) {
-  const executable = isWindows ? `${command}.cmd` : command;
+  const executable = isWindows ? "cmd.exe" : command;
+  const commandArgs = isWindows ? ["/d", "/s", "/c", `${command}.cmd`, ...args] : args;
   const display = [command, ...args].join(" ");
   console.log(`\n> ${display}`);
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { stdio: "inherit" });
+    const child = spawn(executable, commandArgs, { stdio: "inherit" });
     child.on("error", reject);
     child.on("exit", (code) => {
       if (code === 0) resolve();
