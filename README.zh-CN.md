@@ -32,6 +32,8 @@ git clone https://github.com/koiyoho/local_ai_drawboard.git && cd local_ai_drawb
 npm run start:local
 ```
 
+本地使用请运行 `start:local`。它会强制启用本地单用户模式，并跳过登录页。
+
 打开浏览器访问：
 
 ```text

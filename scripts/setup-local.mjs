@@ -20,7 +20,13 @@ console.log("Then open http://localhost:3010");
 
 async function ensureEnvFile() {
   if (existsSync(".env")) {
-    console.log("Found existing .env, leaving it unchanged.");
+    let envText = await readFile(".env", "utf8");
+    envText = upsertEnvLine(envText, "APP_VARIANT", "local");
+    envText = upsertEnvLine(envText, "ADMIN_USERNAME", "local");
+    envText = upsertEnvLine(envText, "AUTH_URL", "http://localhost:3010");
+    envText = ensureEnvLine(envText, "UPDATE_CHANNEL", "local");
+    await writeFile(".env", envText);
+    console.log("Updated existing .env with local defaults.");
     return;
   }
 
@@ -56,6 +62,13 @@ function ensureEnvLine(envText, key, value) {
   if (new RegExp(`^${key}=`, "m").test(envText)) return envText;
   const suffix = envText.endsWith("\n") ? "" : "\n";
   return `${envText}${suffix}${key}="${value}"\n`;
+}
+
+function upsertEnvLine(envText, key, value) {
+  if (new RegExp(`^${key}=`, "m").test(envText)) {
+    return envText.replace(new RegExp(`^${key}=.*$`, "m"), `${key}="${value}"`);
+  }
+  return ensureEnvLine(envText, key, value);
 }
 
 function run(command, args) {

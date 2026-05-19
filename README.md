@@ -34,6 +34,8 @@ Run this from the project folder:
 npm run start:local
 ```
 
+Use `start:local` for local use. It forces single-user local mode and skips the login page.
+
 Open:
 
 ```text
