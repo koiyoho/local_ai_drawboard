@@ -58,6 +58,22 @@ npm run start:local
 http://localhost:3010
 ```
 
+## 更新
+
+先在运行应用的终端里按 `Ctrl+C` 停止应用，然后运行：
+
+```bash
+git pull
+npm run setup:local
+npm run start:local
+```
+
+打开浏览器访问：
+
+```text
+http://localhost:3010
+```
+
 ## 配置 AI 接口
 
 打开应用后进入 **本地设置**，配置 OpenAI 兼容接口：

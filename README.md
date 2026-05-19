@@ -60,6 +60,22 @@ Then open:
 http://localhost:3010
 ```
 
+## Update
+
+Stop the app with `Ctrl+C`, then run:
+
+```bash
+git pull
+npm run setup:local
+npm run start:local
+```
+
+Open:
+
+```text
+http://localhost:3010
+```
+
 ## Configure AI
 
 Open the app, go to **Local Settings**, and configure an OpenAI-compatible provider:
