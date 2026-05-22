@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiJson } from "@/client/api";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { IconCollapseDown, IconCollapseUp, IconRefresh } from "@/components/ui/icons";
-import { isTerminalUpdateJobStatus, shouldSurfaceUpdatePollingError } from "@/lib/system-update-ui";
+import { formatUpdateError, isTerminalUpdateJobStatus, shouldSurfaceUpdatePollingError } from "@/lib/system-update-ui";
 import type { UpdateCheckPayload, UpdateJobPayload, UpdateJobResponse, UpdateManifestPayload } from "@/components/system-update-types";
 
 const completionRefreshDelaysMs = [1000, 2500, 5000, 8000];
@@ -33,7 +33,7 @@ export function SystemUpdatePanel() {
       return true;
     } catch (error) {
       if (surfaceError) {
-        setError(error instanceof Error ? error.message : "检查更新失败");
+        setError(formatUpdateError(error, "检查更新失败"));
       }
       return false;
     } finally {
@@ -60,7 +60,7 @@ export function SystemUpdatePanel() {
       const nextJob = await apiJson<UpdateJobResponse>(`/api/system/update/jobs/${result.jobId}`);
       updateJob(nextJob.job);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "启动升级失败");
+      setError(formatUpdateError(error, "启动升级失败"));
     } finally {
       setIsApplying(false);
     }
@@ -84,7 +84,7 @@ export function SystemUpdatePanel() {
         })
         .catch((error) => {
           if (!shouldSurfaceUpdatePollingError(jobRef.current, polledJobId)) return;
-          setError(error instanceof Error ? error.message : "读取升级进度失败");
+          setError(formatUpdateError(error, "读取升级进度失败"));
         });
     }, 2000);
     return () => window.clearInterval(timer);
@@ -102,7 +102,7 @@ export function SystemUpdatePanel() {
           <h2>在线升级</h2>
         </div>
         <div className="provider-title-actions">
-          <button disabled={isChecking} onClick={checkUpdate} type="button">
+          <button disabled={isChecking} onClick={() => void checkUpdate()} type="button">
             <AppIcon icon={IconRefresh} className={isChecking ? "spin" : undefined} size="md" />
             {isChecking ? "检查中" : "检查更新"}
           </button>

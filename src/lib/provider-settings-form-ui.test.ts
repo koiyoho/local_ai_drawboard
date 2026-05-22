@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const source = readFileSync("src/components/ProviderSettingsForm.tsx", "utf8");
+
+test("provider model pool owns its model catalog state when expanded", () => {
+  const poolStart = source.indexOf("export function ProviderModelPoolSettings");
+  const historyStart = source.indexOf("function ProviderHistoryList");
+  assert.ok(poolStart > 0, "ProviderModelPoolSettings should exist");
+  assert.ok(historyStart > poolStart, "ProviderModelPoolSettings body should be bounded by ProviderHistoryList");
+
+  const poolSource = source.slice(poolStart, historyStart);
+  assert.match(poolSource, /const \[modelCatalog, setModelCatalog\] = useState/);
+  assert.match(poolSource, /apiFetch\("\/api\/admin\/provider-models\/catalog"\)/);
+  assert.match(poolSource, /catalog=\{modelCatalog\.imageModels\}/);
+  assert.match(poolSource, /catalog=\{modelCatalog\.reversePromptModels\}/);
+});
+
+test("provider model pool keeps channel-qualified defaults and custom model input", () => {
+  assert.match(source, /onFallbackModelChange\(getStoredFallbackModelValue\(value\)\)/);
+  assert.match(source, /getFallbackModelOptions\(catalog, models\)/);
+  assert.match(source, /\(model\.channel \?\? defaultProviderModelChannel\) === defaultProviderModelChannel/);
+  assert.match(source, /getProviderModelOptionValue\(configuredModel\)/);
+  assert.match(source, /placeholder="输入自定义模型 ID"/);
+  assert.match(source, /onChange=\{\(event\) => updateModel\(index, \{ id: event\.target\.value/);
+});

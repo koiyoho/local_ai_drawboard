@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { parseConfiguredModelValue } from "./provider-models";
 
 export type OpenAIProviderConfig = {
   apiKey: string;
@@ -19,9 +20,9 @@ export function createOpenAIClient(config: OpenAIProviderConfig) {
 }
 
 export function getImageModel(config: Pick<OpenAIProviderConfig, "imageModel">) {
-  return config.imageModel || "gpt-image-2";
+  return parseConfiguredModelValue(config.imageModel || "gpt-image-2").id;
 }
 
 export function getTextModel(config: Pick<OpenAIProviderConfig, "textModel">) {
-  return config.textModel?.trim() || process.env.OPENAI_TEXT_MODEL?.trim() || "gpt-5.5";
+  return parseConfiguredModelValue(config.textModel?.trim() || process.env.OPENAI_TEXT_MODEL?.trim() || "gpt-5.5").id;
 }

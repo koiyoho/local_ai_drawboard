@@ -591,7 +591,8 @@ test("createImageGenerationJob rejects Codex OAuth-only auth without a Codex ima
 
     assert.equal(result.ok, false);
     assert.equal(result.statusCode, 400);
-    assert.match(result.error, /账号 OAuth token/);
+    assert.match(result.error, /Codex OAuth token/);
+    assert.match(result.error, /不是 OpenAI Images API key/);
     assert.match(result.error, /CODEX_IMAGE_PROXY_BASE_URL/);
   } finally {
     if (previousDataDir === undefined) {
@@ -668,6 +669,439 @@ test("createImageGenerationJob routes Codex image models through a configured Op
     restoreEnv("CODEX_IMAGE_PROXY_API_KEY", previousProxyApiKey);
     restoreEnv("CODEX_IMAGE_PROXY_BASE_URL", previousProxyBaseUrl);
   }
+});
+
+test("createImageGenerationJob honors explicit model channels when duplicate ids exist", async () => {
+  const previousProxyApiKey = process.env.CODEX_IMAGE_PROXY_API_KEY;
+  const previousProxyBaseUrl = process.env.CODEX_IMAGE_PROXY_BASE_URL;
+  process.env.CODEX_IMAGE_PROXY_API_KEY = "codex-proxy-secret";
+  process.env.CODEX_IMAGE_PROXY_BASE_URL = "http://127.0.0.1:8082/v1";
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        canUseAdminProvider: false,
+        generationFiveHourLimit: 10,
+        generationLimit: 30,
+        name: "generation-duplicate-channel-user",
+        role: "user",
+        status: "approved",
+        username: `generation-duplicate-channel-user-${Date.now()}`,
+      },
+    });
+    await prisma.providerSetting.create({
+      data: {
+        apiKey: "third-party-secret",
+        baseUrl: "https://sub.aipowers.site/v1",
+        displayName: "OpenAI 兼容接口",
+        enabledImageModels: JSON.stringify([
+          { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+          { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+        ]),
+        imageModel: "gpt-image-2",
+        provider: "openai-compatible",
+        textModel: "gpt-5.5",
+        userId: user.id,
+      },
+    });
+    const board = await prisma.board.create({
+      data: { name: "Duplicate model channel board", userId: user.id },
+    });
+
+    const { createImageGenerationJob } = await import(generationJobServiceModuleUrl);
+    const result = await createImageGenerationJob({
+      boardName: board.name,
+      generation: {
+        boardId: board.id,
+        count: 1,
+        mode: "text_to_image",
+        model: "codex:gpt-image-2",
+        prompt: "生成一张测试图片",
+        referenceAssetIds: [],
+        size: "1024x1024",
+      },
+      user,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.providerSetting.displayName, "官方 Codex 代理");
+    assert.equal(result.providerSetting.baseUrl, "http://127.0.0.1:8082/v1");
+    const params = JSON.parse(result.job.paramsJson);
+    assert.equal(params.model, "gpt-image-2");
+    assert.equal(params.modelChannel, "codex");
+  } finally {
+    restoreEnv("CODEX_IMAGE_PROXY_API_KEY", previousProxyApiKey);
+    restoreEnv("CODEX_IMAGE_PROXY_BASE_URL", previousProxyBaseUrl);
+  }
+});
+
+test("createImageGenerationJob honors channel-qualified default models when no model is requested", async () => {
+  const previousProxyApiKey = process.env.CODEX_IMAGE_PROXY_API_KEY;
+  const previousProxyBaseUrl = process.env.CODEX_IMAGE_PROXY_BASE_URL;
+  process.env.CODEX_IMAGE_PROXY_API_KEY = "codex-proxy-secret";
+  process.env.CODEX_IMAGE_PROXY_BASE_URL = "http://127.0.0.1:8083/v1";
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        canUseAdminProvider: false,
+        generationFiveHourLimit: 10,
+        generationLimit: 30,
+        name: "generation-default-channel-user",
+        role: "user",
+        status: "approved",
+        username: `generation-default-channel-user-${Date.now()}`,
+      },
+    });
+    await prisma.providerSetting.create({
+      data: {
+        apiKey: "third-party-secret",
+        baseUrl: "https://sub.aipowers.site/v1",
+        displayName: "OpenAI 兼容接口",
+        enabledImageModels: JSON.stringify([
+          { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+          { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+        ]),
+        imageModel: "codex:gpt-image-2",
+        provider: "openai-compatible",
+        textModel: "gpt-5.5",
+        userId: user.id,
+      },
+    });
+    const board = await prisma.board.create({
+      data: { name: "Default duplicate model channel board", userId: user.id },
+    });
+
+    const { createImageGenerationJob } = await import(generationJobServiceModuleUrl);
+    const result = await createImageGenerationJob({
+      boardName: board.name,
+      generation: {
+        boardId: board.id,
+        count: 1,
+        mode: "text_to_image",
+        prompt: "生成一张测试图片",
+        referenceAssetIds: [],
+        size: "1024x1024",
+      },
+      user,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.model, "gpt-image-2");
+    assert.equal(result.providerSetting.displayName, "官方 Codex 代理");
+    assert.equal(result.providerSetting.baseUrl, "http://127.0.0.1:8083/v1");
+    const params = JSON.parse(result.job.paramsJson);
+    assert.equal(params.model, "gpt-image-2");
+    assert.equal(params.modelChannel, "codex");
+  } finally {
+    restoreEnv("CODEX_IMAGE_PROXY_API_KEY", previousProxyApiKey);
+    restoreEnv("CODEX_IMAGE_PROXY_BASE_URL", previousProxyBaseUrl);
+  }
+});
+
+test("createImageGenerationJob keeps legacy unqualified requests on provider even when the duplicate default is Codex", async () => {
+  const previousProxyApiKey = process.env.CODEX_IMAGE_PROXY_API_KEY;
+  const previousProxyBaseUrl = process.env.CODEX_IMAGE_PROXY_BASE_URL;
+  process.env.CODEX_IMAGE_PROXY_API_KEY = "codex-proxy-secret";
+  process.env.CODEX_IMAGE_PROXY_BASE_URL = "http://127.0.0.1:8087/v1";
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        canUseAdminProvider: false,
+        generationFiveHourLimit: 10,
+        generationLimit: 30,
+        name: "generation-legacy-request-channel-user",
+        role: "user",
+        status: "approved",
+        username: `generation-legacy-request-channel-user-${Date.now()}`,
+      },
+    });
+    await prisma.providerSetting.create({
+      data: {
+        apiKey: "third-party-secret",
+        baseUrl: "https://sub.aipowers.site/v1",
+        displayName: "OpenAI 兼容接口",
+        enabledImageModels: JSON.stringify([
+          { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+          { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+        ]),
+        imageModel: "codex:gpt-image-2",
+        provider: "openai-compatible",
+        textModel: "gpt-5.5",
+        userId: user.id,
+      },
+    });
+    const board = await prisma.board.create({
+      data: { name: "Legacy duplicate model request board", userId: user.id },
+    });
+
+    const { createImageGenerationJob } = await import(generationJobServiceModuleUrl);
+    const result = await createImageGenerationJob({
+      boardName: board.name,
+      generation: {
+        boardId: board.id,
+        count: 1,
+        mode: "text_to_image",
+        model: "gpt-image-2",
+        prompt: "生成一张测试图片",
+        referenceAssetIds: [],
+        size: "1024x1024",
+      },
+      user,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.model, "gpt-image-2");
+    assert.equal(result.providerSetting.displayName, "OpenAI 兼容接口");
+    assert.equal(result.providerSetting.baseUrl, "https://sub.aipowers.site/v1");
+    const params = JSON.parse(result.job.paramsJson);
+    assert.equal(params.model, "gpt-image-2");
+    assert.equal(params.modelChannel, "provider");
+    assert.equal(params.providerRoute, "provider-setting");
+  } finally {
+    restoreEnv("CODEX_IMAGE_PROXY_API_KEY", previousProxyApiKey);
+    restoreEnv("CODEX_IMAGE_PROXY_BASE_URL", previousProxyBaseUrl);
+  }
+});
+
+test("createImageGenerationJob keeps legacy unqualified requests on a channel-qualified default when the image model pool is empty", async () => {
+  const previousProxyApiKey = process.env.CODEX_IMAGE_PROXY_API_KEY;
+  const previousProxyBaseUrl = process.env.CODEX_IMAGE_PROXY_BASE_URL;
+  process.env.CODEX_IMAGE_PROXY_API_KEY = "codex-proxy-secret";
+  process.env.CODEX_IMAGE_PROXY_BASE_URL = "http://127.0.0.1:8088/v1";
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        canUseAdminProvider: false,
+        generationFiveHourLimit: 10,
+        generationLimit: 30,
+        name: "generation-empty-pool-legacy-request-channel-user",
+        role: "user",
+        status: "approved",
+        username: `generation-empty-pool-legacy-request-channel-user-${Date.now()}`,
+      },
+    });
+    await prisma.providerSetting.create({
+      data: {
+        apiKey: "third-party-secret",
+        baseUrl: "https://sub.aipowers.site/v1",
+        displayName: "OpenAI 兼容接口",
+        enabledImageModels: null,
+        imageModel: "codex:gpt-image-2",
+        provider: "openai-compatible",
+        textModel: "gpt-5.5",
+        userId: user.id,
+      },
+    });
+    const board = await prisma.board.create({
+      data: { name: "Empty pool legacy request channel board", userId: user.id },
+    });
+
+    const { createImageGenerationJob } = await import(generationJobServiceModuleUrl);
+    const result = await createImageGenerationJob({
+      boardName: board.name,
+      generation: {
+        boardId: board.id,
+        count: 1,
+        mode: "text_to_image",
+        model: "gpt-image-2",
+        prompt: "生成一张测试图片",
+        referenceAssetIds: [],
+        size: "1024x1024",
+      },
+      user,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.model, "gpt-image-2");
+    assert.equal(result.providerSetting.displayName, "官方 Codex 代理");
+    assert.equal(result.providerSetting.baseUrl, "http://127.0.0.1:8088/v1");
+    const params = JSON.parse(result.job.paramsJson);
+    assert.equal(params.model, "gpt-image-2");
+    assert.equal(params.modelChannel, "codex");
+    assert.equal(params.providerRoute, "codex");
+  } finally {
+    restoreEnv("CODEX_IMAGE_PROXY_API_KEY", previousProxyApiKey);
+    restoreEnv("CODEX_IMAGE_PROXY_BASE_URL", previousProxyBaseUrl);
+  }
+});
+
+test("createImageGenerationJob accepts channel-qualified default model when the image model pool is empty", async () => {
+  const previousProxyApiKey = process.env.CODEX_IMAGE_PROXY_API_KEY;
+  const previousProxyBaseUrl = process.env.CODEX_IMAGE_PROXY_BASE_URL;
+  process.env.CODEX_IMAGE_PROXY_API_KEY = "codex-proxy-secret";
+  process.env.CODEX_IMAGE_PROXY_BASE_URL = "http://127.0.0.1:8085/v1";
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        canUseAdminProvider: false,
+        generationFiveHourLimit: 10,
+        generationLimit: 30,
+        name: "generation-empty-pool-default-channel-user",
+        role: "user",
+        status: "approved",
+        username: `generation-empty-pool-default-channel-user-${Date.now()}`,
+      },
+    });
+    await prisma.providerSetting.create({
+      data: {
+        apiKey: "third-party-secret",
+        baseUrl: "https://sub.aipowers.site/v1",
+        displayName: "OpenAI 兼容接口",
+        enabledImageModels: null,
+        imageModel: "codex:gpt-image-2",
+        provider: "openai-compatible",
+        textModel: "gpt-5.5",
+        userId: user.id,
+      },
+    });
+    const board = await prisma.board.create({
+      data: { name: "Empty pool default channel board", userId: user.id },
+    });
+
+    const { createImageGenerationJob } = await import(generationJobServiceModuleUrl);
+    const result = await createImageGenerationJob({
+      boardName: board.name,
+      generation: {
+        boardId: board.id,
+        count: 1,
+        mode: "text_to_image",
+        model: "codex:gpt-image-2",
+        prompt: "生成一张测试图片",
+        referenceAssetIds: [],
+        size: "1024x1024",
+      },
+      user,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.model, "gpt-image-2");
+    assert.equal(result.providerSetting.displayName, "官方 Codex 代理");
+    assert.equal(result.providerSetting.baseUrl, "http://127.0.0.1:8085/v1");
+    const params = JSON.parse(result.job.paramsJson);
+    assert.equal(params.model, "gpt-image-2");
+    assert.equal(params.modelChannel, "codex");
+  } finally {
+    restoreEnv("CODEX_IMAGE_PROXY_API_KEY", previousProxyApiKey);
+    restoreEnv("CODEX_IMAGE_PROXY_BASE_URL", previousProxyBaseUrl);
+  }
+});
+
+test("createImageGenerationJob honors channel-qualified provider defaults when duplicate ids exist", async () => {
+  const previousProxyApiKey = process.env.CODEX_IMAGE_PROXY_API_KEY;
+  const previousProxyBaseUrl = process.env.CODEX_IMAGE_PROXY_BASE_URL;
+  process.env.CODEX_IMAGE_PROXY_API_KEY = "codex-proxy-secret";
+  process.env.CODEX_IMAGE_PROXY_BASE_URL = "http://127.0.0.1:8084/v1";
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        canUseAdminProvider: false,
+        generationFiveHourLimit: 10,
+        generationLimit: 30,
+        name: "generation-provider-default-channel-user",
+        role: "user",
+        status: "approved",
+        username: `generation-provider-default-channel-user-${Date.now()}`,
+      },
+    });
+    await prisma.providerSetting.create({
+      data: {
+        apiKey: "third-party-secret",
+        baseUrl: "https://sub.aipowers.site/v1",
+        displayName: "OpenAI 兼容接口",
+        enabledImageModels: JSON.stringify([
+          { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+          { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+        ]),
+        imageModel: "provider:gpt-image-2",
+        provider: "openai-compatible",
+        textModel: "gpt-5.5",
+        userId: user.id,
+      },
+    });
+    const board = await prisma.board.create({
+      data: { name: "Provider duplicate model channel board", userId: user.id },
+    });
+
+    const { createImageGenerationJob } = await import(generationJobServiceModuleUrl);
+    const result = await createImageGenerationJob({
+      boardName: board.name,
+      generation: {
+        boardId: board.id,
+        count: 1,
+        mode: "text_to_image",
+        prompt: "生成一张测试图片",
+        referenceAssetIds: [],
+        size: "1024x1024",
+      },
+      user,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.model, "gpt-image-2");
+    assert.equal(result.providerSetting.displayName, "OpenAI 兼容接口");
+    assert.equal(result.providerSetting.baseUrl, "https://sub.aipowers.site/v1");
+    const params = JSON.parse(result.job.paramsJson);
+    assert.equal(params.model, "gpt-image-2");
+    assert.equal(params.modelChannel, "provider");
+  } finally {
+    restoreEnv("CODEX_IMAGE_PROXY_API_KEY", previousProxyApiKey);
+    restoreEnv("CODEX_IMAGE_PROXY_BASE_URL", previousProxyBaseUrl);
+  }
+});
+
+test("createImageGenerationJob rejects a disabled default image model before routing", async () => {
+  const user = await prisma.user.create({
+    data: {
+      canUseAdminProvider: false,
+      generationFiveHourLimit: 10,
+      generationLimit: 30,
+      name: "generation-disabled-default-user",
+      role: "user",
+      status: "approved",
+      username: `generation-disabled-default-user-${Date.now()}`,
+    },
+  });
+  await prisma.providerSetting.create({
+    data: {
+      apiKey: "third-party-secret",
+      baseUrl: "https://sub.aipowers.site/v1",
+      displayName: "OpenAI 兼容接口",
+      enabledImageModels: JSON.stringify([
+        { channel: "provider", enabled: false, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+        { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+      ]),
+      imageModel: "provider:gpt-image-2",
+      provider: "openai-compatible",
+      textModel: "gpt-5.5",
+      userId: user.id,
+    },
+  });
+  const board = await prisma.board.create({
+    data: { name: "Disabled default model board", userId: user.id },
+  });
+
+  const { createImageGenerationJob } = await import(generationJobServiceModuleUrl);
+  const result = await createImageGenerationJob({
+    boardName: board.name,
+    generation: {
+      boardId: board.id,
+      count: 1,
+      mode: "text_to_image",
+      prompt: "生成一张测试图片",
+      referenceAssetIds: [],
+      size: "1024x1024",
+    },
+    user,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.statusCode, 400);
+  assert.match(result.error, /默认图像模型未启用/);
 });
 
 function restoreEnv(name, value) {

@@ -8,7 +8,11 @@ import {
   defaultProviderModelChannel,
   filterImageModelOptions,
   getEnabledProviderModels,
+  getConfiguredModelError,
+  isConfiguredModelEnabled,
   normalizeConfiguredModels,
+  providerImageModelCatalog,
+  providerReversePromptModelCatalog,
   type ConfiguredProviderModel,
   type ProviderModelChannel,
 } from "@/lib/provider-models";
@@ -43,6 +47,29 @@ const applyHistorySchema = z.object({
   historyId: z.string().trim().min(1),
 });
 
+function getProviderSettingModelError(input: {
+  enabledImageModels?: unknown;
+  enabledReversePromptModels?: unknown;
+  imageModel?: string;
+  textModel?: string;
+}) {
+  if (input.imageModel) {
+    const error = getConfiguredModelError(input.imageModel, "默认图像模型");
+    if (error) return error;
+  }
+  if (input.textModel) {
+    const error = getConfiguredModelError(input.textModel, "默认文本模型");
+    if (error) return error;
+  }
+  if (input.imageModel && input.enabledImageModels && !isConfiguredModelEnabled(input.enabledImageModels, input.imageModel)) {
+    return "默认图像模型必须在已启用模型中";
+  }
+  if (input.textModel && input.enabledReversePromptModels && !isConfiguredModelEnabled(input.enabledReversePromptModels, input.textModel)) {
+    return "默认文本模型必须在已启用模型中";
+  }
+  return "";
+}
+
 export async function registerProviderSettingRoutes(app: FastifyInstance) {
   app.get("/api/provider-settings", async (request, reply) => {
     const user = await requireCurrentUser(request, reply);
@@ -67,10 +94,11 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
       return jsonError(reply, providerNotConfiguredMessage, 400);
     }
     const fallbackModel = getImageModel(providerSetting);
+    const selectedModel = providerSetting.imageModel || fallbackModel;
     const configuredModels = providerSetting.enabledImageModels
-      ? getEnabledProviderModels(providerSetting.enabledImageModels, fallbackModel)
+      ? getEnabledProviderModels(providerSetting.enabledImageModels, selectedModel)
       : [];
-    if (configuredModels.length > 0) return { models: configuredModels, selectedModel: fallbackModel };
+    if (configuredModels.length > 0) return { models: configuredModels, selectedModel };
     try {
       const openai = createOpenAIClient(providerSetting);
       const page = await openai.models.list();
@@ -82,7 +110,7 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
       return {
         error: `无法读取第三方模型列表，已回退到当前图片模型：${message}`,
         models: filterImageModelOptions([], fallbackModel),
-        selectedModel: fallbackModel,
+        selectedModel,
       };
     }
   });
@@ -103,10 +131,19 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
     const imageFallback = getImageModel(providerSetting);
     const reverseFallback = getTextModel(providerSetting);
     return {
-      imageModels: getEnabledProviderModels(providerSetting.enabledImageModels, imageFallback),
-      reversePromptModels: getEnabledProviderModels(providerSetting.enabledReversePromptModels, reverseFallback),
-      selectedImageModel: imageFallback,
-      selectedReversePromptModel: reverseFallback,
+      imageModels: getEnabledProviderModels(providerSetting.enabledImageModels, providerSetting.imageModel || imageFallback),
+      reversePromptModels: getEnabledProviderModels(providerSetting.enabledReversePromptModels, providerSetting.textModel || reverseFallback),
+      selectedImageModel: providerSetting.imageModel || imageFallback,
+      selectedReversePromptModel: providerSetting.textModel || reverseFallback,
+    };
+  });
+
+  app.get("/api/admin/provider-models/catalog", async (request, reply) => {
+    const user = await requireAdminUser(request, reply);
+    if (!user) return;
+    return {
+      imageModels: providerImageModelCatalog,
+      reversePromptModels: providerReversePromptModelCatalog,
     };
   });
 
@@ -115,6 +152,8 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
     if (!user) return;
     const parsed = parseBody(providerSettingSchema, request.body);
     if (!parsed.ok) return jsonError(reply, parsed.error);
+    const modelError = getProviderSettingModelError(parsed.data);
+    if (modelError) return jsonError(reply, modelError, 400);
     const existing = await prisma.providerSetting.findUnique({ where: { userId_provider: { provider, userId: user.id } } });
     const apiKey = parsed.data.apiKey ?? existing?.apiKey;
     if (!apiKey) return jsonError(reply, "API Key is required");
@@ -126,6 +165,13 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
     const enabledReversePromptModels = parsed.data.enabledReversePromptModels === undefined
       ? existing?.enabledReversePromptModels ?? serializeConfiguredModels([], textModel)
       : serializeConfiguredModels(parsed.data.enabledReversePromptModels, textModel);
+    const finalModelError = getProviderSettingModelError({
+      enabledImageModels,
+      enabledReversePromptModels,
+      imageModel,
+      textModel,
+    });
+    if (finalModelError) return jsonError(reply, finalModelError, 400);
     const providerSetting = await prisma.providerSetting.upsert({
       where: { userId_provider: { provider, userId: user.id } },
       create: { apiKey, baseUrl: parsed.data.baseUrl, displayName: parsed.data.displayName, enabled: true, enabledImageModels, enabledReversePromptModels, imageModel, provider, textModel, userId: user.id },
@@ -149,6 +195,13 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
       where: { id: parsed.data.historyId, provider, userId: user.id },
     });
     if (!history) return jsonError(reply, "API 设置历史不存在", 404);
+    const modelError = getProviderSettingModelError({
+      enabledImageModels: history.enabledImageModels,
+      enabledReversePromptModels: history.enabledReversePromptModels,
+      imageModel: history.imageModel,
+      textModel: history.textModel,
+    });
+    if (modelError) return jsonError(reply, modelError, 400);
     const providerSetting = await prisma.providerSetting.upsert({
       where: { userId_provider: { provider, userId: user.id } },
       create: {
@@ -204,8 +257,15 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
     if (!parsed.ok) return jsonError(reply, parsed.error);
     const existing = await prisma.providerSetting.findUnique({ where: { userId_provider: { provider, userId: user.id } } });
     if (!existing) return jsonError(reply, "请先保存 API 设置，再配置前台可选模型", 400);
-    const imageModel = parsed.data.imageModel ?? parsed.data.enabledImageModels.find((model) => model.enabled)?.id ?? existing.imageModel;
-    const textModel = parsed.data.textModel ?? parsed.data.enabledReversePromptModels.find((model) => model.enabled)?.id ?? existing.textModel;
+    const imageModel = parsed.data.imageModel ?? encodeConfiguredModelFallback(parsed.data.enabledImageModels.find((model) => model.enabled)) ?? existing.imageModel;
+    const textModel = parsed.data.textModel ?? encodeConfiguredModelFallback(parsed.data.enabledReversePromptModels.find((model) => model.enabled)) ?? existing.textModel;
+    const modelError = getProviderSettingModelError({
+      enabledImageModels: parsed.data.enabledImageModels,
+      enabledReversePromptModels: parsed.data.enabledReversePromptModels,
+      imageModel,
+      textModel,
+    });
+    if (modelError) return jsonError(reply, modelError, 400);
     const providerSetting = await prisma.providerSetting.update({
       data: {
         enabledImageModels: serializeConfiguredModels(parsed.data.enabledImageModels, imageModel),
@@ -222,6 +282,10 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
 
 function withDefaultChannel<T extends { channel?: ProviderModelChannel }>(model: T): T & { channel: ProviderModelChannel } {
   return { ...model, channel: model.channel ?? defaultProviderModelChannel };
+}
+
+function encodeConfiguredModelFallback(model: ConfiguredProviderModel | undefined) {
+  return model ? `${model.channel ?? defaultProviderModelChannel}:${model.id}` : undefined;
 }
 
 function redactProviderSetting(setting: ProviderSetting | null) {

@@ -2,6 +2,7 @@ export type AssetPayload = {
   id: string;
   kind: string;
   publicUrl: string;
+  thumbnailUrl?: string;
   mimeType: string;
   width: number | null;
   height: number | null;

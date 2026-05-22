@@ -9,6 +9,11 @@ const applyUpdateBodySchema = z.object({
   confirmedVersion: z.string().trim().min(1).optional(),
 });
 
+function getApplyUpdateErrorStatus(error: unknown) {
+  if (error instanceof Error && error.message === "Another update job is already active") return 409;
+  return 400;
+}
+
 export async function registerSystemRoutes(app: FastifyInstance) {
   app.get("/api/system/version", async () => getCurrentVersion());
 
@@ -26,9 +31,13 @@ export async function registerSystemRoutes(app: FastifyInstance) {
     const parsed = parseBody(applyUpdateBodySchema, request.body ?? {});
     if (!parsed.ok) return jsonError(reply, parsed.error);
     try {
-      return applyUpdate(parsed.data);
+      return await applyUpdate(parsed.data);
     } catch (error) {
-      return jsonError(reply, error instanceof Error ? error.message : "Update apply failed");
+      return jsonError(
+        reply,
+        error instanceof Error ? error.message : "Update apply failed",
+        getApplyUpdateErrorStatus(error),
+      );
     }
   });
 

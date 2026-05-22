@@ -14,3 +14,11 @@ export function shouldSurfaceUpdatePollingError(currentJob: UpdateJobStatusSnaps
   if (currentJob.id !== polledJobId) return false;
   return !isTerminalUpdateJobStatus(currentJob.status);
 }
+
+export function formatUpdateError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : "";
+  if (message === "Another update job is already active") {
+    return "已有升级任务正在执行，请等待当前升级完成";
+  }
+  return message || fallback;
+}

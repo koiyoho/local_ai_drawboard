@@ -189,7 +189,6 @@ test("prompt recipes can be created, listed, duplicated, and deleted for the cur
           artStyle: "realistic",
           count: 2,
           referenceRoles: ["clothing"],
-          replacementType: "upper_clothing",
           size: "2048x1152",
         },
         prompt: "保持人物姿态，只替换上衣",

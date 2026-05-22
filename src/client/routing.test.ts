@@ -11,3 +11,8 @@ test("hash admin route opens admin without requiring a server /admin path", () =
 test("legacy /admin path still opens admin when server route fallback is available", () => {
   assert.deepEqual(getClientRoute({ hash: "", pathname: "/admin" }), { kind: "admin" });
 });
+
+test("reverse prompt route opens standalone reverse prompt page", () => {
+  assert.deepEqual(getClientRoute({ hash: "", pathname: "/reverse-prompt" }), { kind: "reversePrompt" });
+  assert.deepEqual(getClientRoute({ hash: "", pathname: "/reverse-prompt/" }), { kind: "reversePrompt" });
+});

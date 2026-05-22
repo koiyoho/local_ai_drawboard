@@ -177,15 +177,76 @@ test("admin can publish enabled model options for frontend selection", async () 
     });
     assert.equal(optionsResponse.statusCode, 200);
     const options = JSON.parse(optionsResponse.body);
-    assert.deepEqual(options.imageModels, [{ id: "flux-kontext-pro", label: "Flux Kontext" }]);
-    assert.deepEqual(options.reversePromptModels, [{ id: "gpt-5.5", label: "GPT 5.5" }]);
-    assert.equal(options.selectedImageModel, "flux-kontext-pro");
+    assert.deepEqual(options.imageModels, [{ channel: "provider", id: "flux-kontext-pro", label: "Flux Kontext" }]);
+    assert.deepEqual(options.reversePromptModels, [{ channel: "provider", id: "gpt-5.5", label: "GPT 5.5" }]);
+    assert.equal(options.selectedImageModel, "provider:flux-kontext-pro");
   } finally {
     await app.close();
   }
 });
 
-test("frontend model options stay model-only when backend channels are configured", async () => {
+test("admin can fetch provider model catalog for local model pool editing", async () => {
+  const app = await createTestApp();
+  try {
+    const anonymousResponse = await app.inject({
+      method: "GET",
+      url: "/api/admin/provider-models/catalog",
+    });
+    assert.equal(anonymousResponse.statusCode, 401);
+
+    const user = await createUser();
+    const userCookie = await sessionCookieFor(user.id);
+    const userResponse = await app.inject({
+      headers: { cookie: userCookie },
+      method: "GET",
+      url: "/api/admin/provider-models/catalog",
+    });
+    assert.equal(userResponse.statusCode, 403);
+
+    const admin = await createUser({ role: "admin", username: "admin" });
+    const adminCookie = await sessionCookieFor(admin.id);
+    const response = await app.inject({
+      headers: { cookie: adminCookie },
+      method: "GET",
+      url: "/api/admin/provider-models/catalog",
+    });
+    assert.equal(response.statusCode, 200);
+    const catalog = JSON.parse(response.body);
+    assert.ok(catalog.imageModels.provider.some((model) => model.id === "gpt-image-2"));
+    assert.ok(catalog.imageModels["gemini-bridge"].some((model) => model.id === "nano-banana"));
+    assert.ok(catalog.reversePromptModels.codex.some((model) => model.id === "gpt-5.5"));
+  } finally {
+    await app.close();
+  }
+});
+
+test("provider settings reject channel-qualified defaults with an empty model id", async () => {
+  const app = await createTestApp();
+  try {
+    const admin = await createUser({ role: "admin", username: "admin" });
+    const cookie = await sessionCookieFor(admin.id);
+
+    const saveResponse = await app.inject({
+      body: {
+        apiKey: "sk-admin-secret",
+        baseUrl: "https://api.admin.example/v1",
+        displayName: "Admin API",
+        imageModel: "codex:",
+        textModel: "provider:",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings",
+    });
+
+    assert.equal(saveResponse.statusCode, 400);
+    assert.match(JSON.parse(saveResponse.body).error, /模型 ID/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("frontend model options include channels when duplicate model ids are configured", async () => {
   const app = await createTestApp();
   try {
     const admin = await createUser({ role: "admin", username: "admin" });
@@ -197,6 +258,7 @@ test("frontend model options stay model-only when backend channels are configure
         baseUrl: "https://api.admin.example/v1",
         displayName: "Admin API",
         enabledImageModels: [
+          { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
           { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2" },
           { channel: "gemini-bridge", enabled: true, id: "nano-banana", label: "Nano Banana" },
         ],
@@ -217,10 +279,226 @@ test("frontend model options stay model-only when backend channels are configure
     assert.equal(optionsResponse.statusCode, 200);
     const options = JSON.parse(optionsResponse.body);
     assert.deepEqual(options.imageModels, [
-      { id: "gpt-image-2", label: "GPT Image 2" },
-      { id: "nano-banana", label: "Nano Banana" },
+      { channel: "provider", id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+      { channel: "codex", id: "gpt-image-2", label: "GPT Image 2" },
+      { channel: "gemini-bridge", id: "nano-banana", label: "Nano Banana" },
     ]);
-    assert.equal(JSON.stringify(options.imageModels).includes("channel"), false);
+  } finally {
+    await app.close();
+  }
+});
+
+test("admin model settings reject disabled default models", async () => {
+  const app = await createTestApp();
+  try {
+    const admin = await createUser({ role: "admin", username: "admin" });
+    const cookie = await sessionCookieFor(admin.id);
+
+    await app.inject({
+      body: {
+        apiKey: "sk-admin-secret",
+        baseUrl: "https://api.admin.example/v1",
+        displayName: "Admin API",
+        imageModel: "gpt-image-2",
+        textModel: "gpt-5.5",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings",
+    });
+
+    const saveResponse = await app.inject({
+      body: {
+        enabledImageModels: [
+          { channel: "provider", enabled: false, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+          { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+        ],
+        enabledReversePromptModels: [
+          { channel: "provider", enabled: false, id: "gpt-5.5", label: "GPT 5.5 · Provider" },
+          { channel: "codex", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Codex" },
+        ],
+        imageModel: "provider:gpt-image-2",
+        textModel: "provider:gpt-5.5",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/admin/provider-models",
+    });
+
+    assert.equal(saveResponse.statusCode, 400);
+    assert.match(JSON.parse(saveResponse.body).error, /默认图像模型/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("provider settings reject defaults disabled by the existing model pool", async () => {
+  const app = await createTestApp();
+  try {
+    const admin = await createUser({ role: "admin", username: "admin" });
+    const cookie = await sessionCookieFor(admin.id);
+
+    await app.inject({
+      body: {
+        apiKey: "sk-admin-secret",
+        baseUrl: "https://api.admin.example/v1",
+        displayName: "Admin API",
+        imageModel: "gpt-image-2",
+        textModel: "gpt-5.5",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings",
+    });
+
+    const modelPoolResponse = await app.inject({
+      body: {
+        enabledImageModels: [
+          { channel: "provider", enabled: false, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+          { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+        ],
+        enabledReversePromptModels: [
+          { channel: "provider", enabled: false, id: "gpt-5.5", label: "GPT 5.5 · Provider" },
+          { channel: "codex", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Codex" },
+        ],
+        imageModel: "codex:gpt-image-2",
+        textModel: "codex:gpt-5.5",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/admin/provider-models",
+    });
+    assert.equal(modelPoolResponse.statusCode, 200);
+
+    const saveResponse = await app.inject({
+      body: {
+        apiKey: "sk-admin-secret-2",
+        baseUrl: "https://api.admin2.example/v1",
+        displayName: "Admin API Updated",
+        imageModel: "provider:gpt-image-2",
+        textModel: "provider:gpt-5.5",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings",
+    });
+
+    assert.equal(saveResponse.statusCode, 400);
+    assert.match(JSON.parse(saveResponse.body).error, /默认图像模型/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("admin can save a channel-qualified default model without losing duplicate id routing", async () => {
+  const app = await createTestApp();
+  try {
+    const admin = await createUser({ role: "admin", username: "admin" });
+    const cookie = await sessionCookieFor(admin.id);
+
+    await app.inject({
+      body: {
+        apiKey: "sk-admin-secret",
+        baseUrl: "https://api.admin.example/v1",
+        displayName: "Admin API",
+        imageModel: "gpt-image-2",
+        textModel: "gpt-5.5",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings",
+    });
+
+    const saveResponse = await app.inject({
+      body: {
+        enabledImageModels: [
+          { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+          { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+        ],
+        enabledReversePromptModels: [
+          { channel: "provider", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Provider" },
+          { channel: "codex", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Codex" },
+        ],
+        imageModel: "codex:gpt-image-2",
+        textModel: "codex:gpt-5.5",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/admin/provider-models",
+    });
+    assert.equal(saveResponse.statusCode, 200);
+    const saved = JSON.parse(saveResponse.body).providerSetting;
+    assert.equal(saved.imageModel, "codex:gpt-image-2");
+    assert.equal(saved.textModel, "codex:gpt-5.5");
+
+    const optionsResponse = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/provider-settings/model-options",
+    });
+    assert.equal(optionsResponse.statusCode, 200);
+    const options = JSON.parse(optionsResponse.body);
+    assert.equal(options.selectedImageModel, "codex:gpt-image-2");
+    assert.equal(options.selectedReversePromptModel, "codex:gpt-5.5");
+    assert.deepEqual(options.imageModels, [
+      { channel: "provider", id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+      { channel: "codex", id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+    ]);
+  } finally {
+    await app.close();
+  }
+});
+
+test("admin can save an explicit provider default model without losing its channel", async () => {
+  const app = await createTestApp();
+  try {
+    const admin = await createUser({ role: "admin", username: "admin" });
+    const cookie = await sessionCookieFor(admin.id);
+
+    await app.inject({
+      body: {
+        apiKey: "sk-admin-secret",
+        baseUrl: "https://api.admin.example/v1",
+        displayName: "Admin API",
+        imageModel: "gpt-image-2",
+        textModel: "gpt-5.5",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings",
+    });
+
+    const saveResponse = await app.inject({
+      body: {
+        enabledImageModels: [
+          { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex" },
+          { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Provider" },
+        ],
+        enabledReversePromptModels: [
+          { channel: "codex", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Codex" },
+          { channel: "provider", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Provider" },
+        ],
+        imageModel: "provider:gpt-image-2",
+        textModel: "provider:gpt-5.5",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/admin/provider-models",
+    });
+    assert.equal(saveResponse.statusCode, 200);
+    const saved = JSON.parse(saveResponse.body).providerSetting;
+    assert.equal(saved.imageModel, "provider:gpt-image-2");
+    assert.equal(saved.textModel, "provider:gpt-5.5");
+
+    const optionsResponse = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/provider-settings/model-options",
+    });
+    assert.equal(optionsResponse.statusCode, 200);
+    const options = JSON.parse(optionsResponse.body);
+    assert.equal(options.selectedImageModel, "provider:gpt-image-2");
+    assert.equal(options.selectedReversePromptModel, "provider:gpt-5.5");
   } finally {
     await app.close();
   }

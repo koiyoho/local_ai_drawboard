@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { getAppVariant, getUpdateChannel } from "@/lib/app-variant";
 import { prisma } from "@/lib/prisma";
@@ -87,6 +88,7 @@ const updaterScriptPath = path.join(process.cwd(), "scripts", "systemd-updater.m
 const terminalStatuses: UpdateJobStatus[] = ["completed", "failed", "rolled_back"];
 const defaultManifestHosts = ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"];
 const defaultPackageHosts = ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"];
+const defaultUpdateLockTtlMs = 2 * 60 * 60 * 1000;
 
 export async function getCurrentVersion(): Promise<CurrentVersion> {
   const metadata = await readBuildMetadata();
@@ -199,7 +201,7 @@ export async function applyUpdate(input: ApplyUpdateInput = {}): Promise<{ jobId
     channel: result.manifest.channel,
     fromVersion: result.current.version,
     id: jobId,
-    lockExpiresAt: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
+    lockExpiresAt: new Date(now.getTime() + getUpdateLockTtlMs()).toISOString(),
     message: "Update job queued",
     rollbackStatus: "not_needed",
     startedAt: now.toISOString(),
@@ -237,6 +239,14 @@ export async function getUpdateJob(jobId: string): Promise<UpdateJobState | null
   } catch {
     return null;
   }
+}
+
+export function getUpdateLockTtlMs() {
+  const rawValue = process.env.UPDATE_LOCK_TTL_MS?.trim();
+  if (!rawValue) return defaultUpdateLockTtlMs;
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed) || parsed < 5 * 60 * 1000) return defaultUpdateLockTtlMs;
+  return parsed;
 }
 
 export async function getSystemHealth() {
@@ -398,14 +408,31 @@ function getSystemdRunEnvironmentArgs() {
   const passthroughPrefixes = ["UPDATE_", "APP_VARIANT", "DATABASE_URL", "NODE_ENV", "PORT"];
   return Object.entries(process.env)
     .filter(([key, value]) => Boolean(value) && passthroughPrefixes.some((prefix) => key === prefix || key.startsWith(prefix)))
-    .flatMap(([key, value]) => ["--setenv", `${key}=${value}`]);
+    .flatMap(([key, value]) => (value ? ["--setenv", `${key}=${value}`] : []));
 }
 
 async function writeJson(filePath: string, value: unknown) {
   await mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`);
-  await rename(tempPath, filePath);
+  await renameWithRetry(tempPath, filePath);
+}
+
+async function renameWithRetry(source: string, target: string) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rename(source, target);
+      return;
+    } catch (error) {
+      if (!isRetriableRenameError(error) || attempt === 4) throw error;
+      await sleep(25 * (attempt + 1));
+    }
+  }
+}
+
+function isRetriableRenameError(error: unknown) {
+  if (!isNodeError(error) || typeof error.code !== "string") return false;
+  return ["EACCES", "EPERM", "EBUSY"].includes(error.code);
 }
 
 function jobPath(jobId: string) {

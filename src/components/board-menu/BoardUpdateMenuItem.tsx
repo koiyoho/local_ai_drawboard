@@ -4,7 +4,7 @@ import { apiJson } from "@/client/api";
 import type { UpdateCheckPayload, UpdateJobPayload, UpdateJobResponse } from "@/components/system-update-types";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { IconRefresh, IconVersion } from "@/components/ui/icons";
-import { isTerminalUpdateJobStatus, shouldSurfaceUpdatePollingError } from "@/lib/system-update-ui";
+import { formatUpdateError, isTerminalUpdateJobStatus, shouldSurfaceUpdatePollingError } from "@/lib/system-update-ui";
 
 const completionRefreshDelaysMs = [1000, 2500, 5000, 8000];
 
@@ -48,7 +48,7 @@ export function BoardUpdateMenuItem({ isAdmin }: { isAdmin: boolean }) {
       setMessage(nextPayload.updateAvailable ? `发现 v${nextPayload.manifest?.version}` : "已是最新版本");
       return true;
     } catch (error) {
-      if (surfaceError) setMessage(error instanceof Error ? error.message : "检查更新失败");
+      if (surfaceError) setMessage(formatUpdateError(error, "检查更新失败"));
       await loadVersion();
       return false;
     } finally {
@@ -76,7 +76,7 @@ export function BoardUpdateMenuItem({ isAdmin }: { isAdmin: boolean }) {
       updateJob(nextJob.job);
       setMessage("升级任务已启动");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "启动升级失败");
+      setMessage(formatUpdateError(error, "启动升级失败"));
     } finally {
       setIsApplying(false);
     }
@@ -99,7 +99,7 @@ export function BoardUpdateMenuItem({ isAdmin }: { isAdmin: boolean }) {
         })
         .catch((error) => {
           if (!shouldSurfaceUpdatePollingError(jobRef.current, polledJobId)) return;
-          setMessage(error instanceof Error ? error.message : "读取升级进度失败");
+          setMessage(formatUpdateError(error, "读取升级进度失败"));
         });
     }, 2000);
     return () => window.clearInterval(timer);

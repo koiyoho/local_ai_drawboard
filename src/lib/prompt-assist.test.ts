@@ -6,6 +6,7 @@ import {
   cleanPromptAssistText,
   parsePromptAssistOutput,
   promptAssistActions,
+  promptAssistEngines,
   promptAssistImageTypes,
   type PromptAssistAction,
 } from "./prompt-assist";
@@ -13,6 +14,10 @@ import {
 describe("prompt assist utilities", () => {
   test("exposes the supported actions", () => {
     assert.deepEqual(promptAssistActions, ["optimize", "expand", "variations", "translate"]);
+  });
+
+  test("exposes the supported prompt assist engines", () => {
+    assert.deepEqual(promptAssistEngines, ["standard", "skill2"]);
   });
 
   test("exposes the supported image types", () => {
@@ -59,6 +64,23 @@ describe("prompt assist utilities", () => {
 
     assert.match(instruction, /自动判断最合适的图片类型/);
     assert.match(instruction, /球鞋产品图/);
+  });
+
+  test("builds a skill2 instruction with prompt engineering routing and variables", () => {
+    const instruction = buildPromptAssistInstruction({
+      action: "expand",
+      engine: "skill2",
+      imageType: "auto",
+      prompt: "赛博朋克猫咪海报",
+    });
+
+    assert.match(instruction, /辅助提示词2/);
+    assert.match(instruction, /需求路由/);
+    assert.match(instruction, /极简增强版/);
+    assert.match(instruction, /平衡增强版/);
+    assert.match(instruction, /变量建议/);
+    assert.match(instruction, /赛博朋克猫咪海报/);
+    assert.match(instruction, /只输出 JSON/);
   });
 
   test("includes reference context in the instruction", () => {

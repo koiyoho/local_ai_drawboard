@@ -1,6 +1,6 @@
-import type { ImageSize } from "./image";
+import { GPT_IMAGE_SIZE_LIMITS, isValidImageSize, type ImageSize } from "./image";
 
-export type BoardAspectRatio = "16:9" | "4:3" | "3:2" | "2:1" | "21:9" | "1:1" | "3:4" | "4:5" | "2:3" | "9:16" | "1:2" | "9:21";
+export type BoardAspectRatio = "auto" | "16:9" | "4:3" | "3:2" | "2:1" | "21:9" | "1:1" | "3:4" | "4:5" | "2:3" | "9:16" | "1:2" | "9:21";
 export type BoardQuality = "1k" | "2k" | "4k";
 export type BoardArtStyle = "auto" | "realistic" | "illustration" | "anime" | "watercolor";
 
@@ -13,6 +13,7 @@ export const boardAspectRatioOptions: Array<{
   visualHeight: number;
   visualWidth: number;
 }> = [
+  { value: "auto", label: "自动", appIcon: "Auto", appIconTone: "photo", usageTitle: "跟随源图比例", visualHeight: 12, visualWidth: 16 },
   { value: "21:9", label: "21:9", appIcon: "Ad", appIconTone: "banner", usageTitle: "超宽横幅 / 展示页头图", visualHeight: 9, visualWidth: 21 },
   { value: "2:1", label: "2:1", appIcon: "We", appIconTone: "banner", usageTitle: "社媒头图 / 活动 Banner", visualHeight: 10, visualWidth: 20 },
   { value: "16:9", label: "16:9", appIcon: "▶", appIconTone: "video", usageTitle: "视频封面 / 横版内容", visualHeight: 9, visualWidth: 16 },
@@ -47,6 +48,7 @@ export const boardArtStyleOptions: Array<{
 ];
 
 const aspectQualitySizeMap: Record<BoardAspectRatio, Partial<Record<BoardQuality, ImageSize>>> = {
+  auto: { "2k": "2048x1152" },
   "16:9": { "1k": "1536x864", "2k": "2048x1152", "4k": "3840x2160" },
   "4:3": { "1k": "1024x768", "2k": "2048x1536" },
   "3:2": { "1k": "1536x1024", "2k": "2048x1360" },
@@ -62,6 +64,7 @@ const aspectQualitySizeMap: Record<BoardAspectRatio, Partial<Record<BoardQuality
 };
 
 export function getImageSizeForAspectQuality(aspect: BoardAspectRatio, quality: BoardQuality): ImageSize {
+  if (aspect === "auto") return aspectQualitySizeMap.auto["2k"] ?? "2048x1152";
   const size = aspectQualitySizeMap[aspect][quality];
   if (size) return size;
   const fallback = getAvailableQualityOptions(aspect)[0]?.size;
@@ -77,9 +80,10 @@ export function getAvailableQualityOptions(aspect: BoardAspectRatio) {
 
 export function getAspectFromImageSize(size: ImageSize): BoardAspectRatio {
   for (const [aspect, qualityMap] of Object.entries(aspectQualitySizeMap)) {
+    if (aspect === "auto") continue;
     if (Object.values(qualityMap).includes(size)) return aspect as BoardAspectRatio;
   }
-  return "1:1";
+  return "auto";
 }
 
 export function getQualityFromImageSize(size: ImageSize): BoardQuality {
@@ -91,8 +95,90 @@ export function getQualityFromImageSize(size: ImageSize): BoardQuality {
   return "1k";
 }
 
+export function getBoardAspectRatioSelection(value: unknown): BoardAspectRatio | undefined {
+  return boardAspectRatioOptions.some((option) => option.value === value)
+    ? value as BoardAspectRatio
+    : undefined;
+}
+
 export function appendArtStyleInstruction(prompt: string, artStyle: BoardArtStyle) {
   const option = boardArtStyleOptions.find((item) => item.value === artStyle);
   if (!option?.instruction) return prompt;
   return `${prompt.trim()}\n\n画风要求：${option.instruction}`;
+}
+
+export function getImageSizeForSourceAspect(size: { width?: number | null; height?: number | null }): ImageSize {
+  const sourceWidth = getPositiveNumber(size.width);
+  const sourceHeight = getPositiveNumber(size.height);
+  if (!sourceWidth || !sourceHeight) return getImageSizeForAspectQuality("16:9", "2k");
+
+  const rounded = normalizeDimensionsToImageLimits(sourceWidth, sourceHeight);
+  return `${rounded.width}x${rounded.height}` as ImageSize;
+}
+
+function normalizeDimensionsToImageLimits(width: number, height: number) {
+  const ratio = width / height;
+  const clampedRatio = Math.min(
+    GPT_IMAGE_SIZE_LIMITS.maxRatio,
+    Math.max(1 / GPT_IMAGE_SIZE_LIMITS.maxRatio, ratio),
+  );
+  const currentPixels = width * height;
+  const targetPixels = Math.min(
+    GPT_IMAGE_SIZE_LIMITS.maxPixels,
+    Math.max(GPT_IMAGE_SIZE_LIMITS.minPixels, currentPixels),
+  );
+  let normalizedWidth = Math.sqrt(targetPixels * clampedRatio);
+  let normalizedHeight = normalizedWidth / clampedRatio;
+  const longEdge = Math.max(normalizedWidth, normalizedHeight);
+  if (longEdge > GPT_IMAGE_SIZE_LIMITS.maxEdge) {
+    const scale = GPT_IMAGE_SIZE_LIMITS.maxEdge / longEdge;
+    normalizedWidth *= scale;
+    normalizedHeight *= scale;
+  }
+  const candidates = getImageSizeCandidates(normalizedWidth, normalizedHeight);
+  return candidates.find((candidate) => isValidImageSize(`${candidate.width}x${candidate.height}`)) ?? {
+    height: 1152,
+    width: 2048,
+  };
+}
+
+function getImageSizeCandidates(width: number, height: number) {
+  const roundedWidth = roundToMultiple(width, GPT_IMAGE_SIZE_LIMITS.multiple);
+  const roundedHeight = roundToMultiple(height, GPT_IMAGE_SIZE_LIMITS.multiple);
+  const floorWidth = floorToMultiple(width, GPT_IMAGE_SIZE_LIMITS.multiple);
+  const floorHeight = floorToMultiple(height, GPT_IMAGE_SIZE_LIMITS.multiple);
+  const ceilWidth = ceilToMultiple(width, GPT_IMAGE_SIZE_LIMITS.multiple);
+  const ceilHeight = ceilToMultiple(height, GPT_IMAGE_SIZE_LIMITS.multiple);
+  const candidates = [
+    { height: roundedHeight, width: roundedWidth },
+    { height: ceilHeight, width: ceilWidth },
+    { height: floorHeight, width: floorWidth },
+    { height: roundedHeight, width: ceilWidth },
+    { height: ceilHeight, width: roundedWidth },
+    { height: roundedHeight, width: floorWidth },
+    { height: floorHeight, width: roundedWidth },
+  ];
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = `${candidate.width}x${candidate.height}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function roundToMultiple(value: number, multiple: number) {
+  return Math.max(multiple, Math.round(value / multiple) * multiple);
+}
+
+function floorToMultiple(value: number, multiple: number) {
+  return Math.max(multiple, Math.floor(value / multiple) * multiple);
+}
+
+function ceilToMultiple(value: number, multiple: number) {
+  return Math.max(multiple, Math.ceil(value / multiple) * multiple);
+}
+
+function getPositiveNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }

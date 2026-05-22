@@ -2,7 +2,6 @@ import type { FastifyInstance, FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 
 import type { Asset, StoryboardProject, StoryboardShot } from "@/generated/prisma/client";
-import { createOpenAIClient, getTextModel } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
 import {
   buildShotPromptInstruction,
@@ -29,6 +28,7 @@ import {
 } from "../generation-job-service";
 import { getErrorMessage, jsonError, parseBody } from "../http";
 import { getProviderSetting } from "../provider-settings-helper";
+import { callOpenAICompatibleTextModel } from "../text-model-service";
 
 const upsertStoryboardSchema = z.object({
   brief: storyboardBriefPatchSchema.optional(),
@@ -731,62 +731,6 @@ function parseStringArray(value: string | null) {
   } catch {
     return [];
   }
-}
-
-async function callOpenAICompatibleTextModel(
-  providerSetting: NonNullable<Awaited<ReturnType<typeof getProviderSetting>>>,
-  instruction: string,
-  maxTokens: number,
-  temperature: number,
-) {
-  const openai = createOpenAIClient(providerSetting);
-  const model = getTextModel(providerSetting);
-
-  try {
-    const response = await openai.responses.create({
-      input: [{ content: [{ text: instruction, type: "input_text" }], role: "user" }],
-      max_output_tokens: maxTokens,
-      model,
-      temperature,
-    });
-    return response.output_text?.trim() ?? "";
-  } catch (responseError) {
-    if (!shouldFallbackToChatCompletions(responseError)) {
-      throw responseError;
-    }
-    const response = await openai.chat.completions.create({
-      max_tokens: maxTokens,
-      messages: [{ content: instruction, role: "user" }],
-      model,
-      temperature,
-    });
-    const content = response.choices[0]?.message.content;
-    return typeof content === "string" ? content.trim() : "";
-  }
-}
-
-function shouldFallbackToChatCompletions(error: unknown) {
-  const status = getErrorNumber(error, "status") ?? getErrorNumber(error, "statusCode");
-  if (status !== 404 && status !== 405) return false;
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  return [
-    "method not allowed",
-    "endpoint not found",
-    "route not found",
-    "unknown endpoint",
-    "unknown url",
-    "invalid url",
-    "not implemented",
-    "/responses",
-    "/v1/responses",
-    "responses endpoint",
-  ].some((fallbackMessage) => message.includes(fallbackMessage));
-}
-
-function getErrorNumber(error: unknown, key: string) {
-  if (!isRecord(error)) return undefined;
-  const value = error[key];
-  return typeof value === "number" ? value : undefined;
 }
 
 function buildStoryboardMarkdown(

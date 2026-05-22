@@ -18,11 +18,11 @@ type BoardManagementDrawerProps = {
   error: string;
   isLoading: boolean;
   onClose: () => void;
-  onCreateBoard: (name: string, templateId?: string) => Promise<void>;
-  onDeleteBoard: (boardId: string) => Promise<void>;
-  onDuplicateBoard: (boardId: string) => Promise<void>;
-  onRefreshBoards: () => Promise<void>;
-  onRenameBoard: (boardId: string, name: string) => Promise<void>;
+  onCreateBoard: (name: string, templateId?: string) => Promise<unknown>;
+  onDeleteBoard: (boardId: string) => Promise<unknown>;
+  onDuplicateBoard: (boardId: string) => Promise<unknown>;
+  onRefreshBoards: () => Promise<unknown>;
+  onRenameBoard: (boardId: string, name: string) => Promise<unknown>;
   templates: BoardTemplatePayload[];
 };
 

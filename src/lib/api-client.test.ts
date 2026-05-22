@@ -29,17 +29,25 @@ test("getRuntimeConfig returns an empty object outside the browser", async () =>
 });
 
 test("apiUrl keeps same-origin asset paths in the browser", async () => {
-  const previousWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
-  (globalThis as typeof globalThis & { window?: unknown }).window = {};
+  const testGlobal = globalThis as typeof globalThis & { window?: Window };
+  const hadWindow = "window" in testGlobal;
+  const previousWindow = testGlobal.window;
+  Object.defineProperty(testGlobal, "window", {
+    configurable: true,
+    value: {} as Window,
+  });
   try {
     const { apiUrl } = await import("./api-client");
 
     assert.equal(apiUrl("/api/assets/asset-id/file"), "/api/assets/asset-id/file");
   } finally {
-    if (previousWindow === undefined) {
-      delete (globalThis as typeof globalThis & { window?: unknown }).window;
+    if (!hadWindow) {
+      Reflect.deleteProperty(testGlobal, "window");
     } else {
-      (globalThis as typeof globalThis & { window?: unknown }).window = previousWindow;
+      Object.defineProperty(testGlobal, "window", {
+        configurable: true,
+        value: previousWindow,
+      });
     }
   }
 });

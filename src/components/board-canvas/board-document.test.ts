@@ -5,6 +5,7 @@ import {
   BOARD_DOCUMENT_VERSION,
   type BoardObject,
   type BoardDocument,
+  type BoardRectObject,
   createEmptyBoardDocument,
   createPersistedBoardSnapshot,
   appendObjectsToCurrentPage,
@@ -412,11 +413,11 @@ test("board history undoes and redoes document changes", () => {
   const history = pushBoardHistory(createBoardHistory(initialDocument), changedDocument);
 
   const undone = undoBoardHistory(history);
-  assert.equal(undone.document.pages[0]?.objects[0]?.x, 0);
+  assert.equal((undone.document.pages[0]?.objects[0] as BoardRectObject | undefined)?.x, 0);
   assert.equal(undone.canRedo, true);
 
   const redone = redoBoardHistory(undone);
-  assert.equal(redone.document.pages[0]?.objects[0]?.x, 24);
+  assert.equal((redone.document.pages[0]?.objects[0] as BoardRectObject | undefined)?.x, 24);
   assert.equal(redone.canUndo, true);
 });
 

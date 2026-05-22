@@ -10,6 +10,22 @@ const appModuleUrl = new URL("../dist/server/server/app.js", import.meta.url);
 const prismaModuleUrl = new URL("../dist/server/src/lib/prisma.js", import.meta.url);
 const authModuleUrl = new URL("../dist/server/server/auth.js", import.meta.url);
 const execFileAsync = promisify(execFile);
+const expectedGeminiTextModelIds = [
+  "gemini-web",
+  "gemini-web-3.1-flash-lite",
+  "gemini-web-3.5-flash",
+  "gemini-web-3.1-pro-standard",
+  "gemini-web-3.1-pro-extended",
+];
+const expectedGeminiImageModelIds = [...expectedGeminiTextModelIds, "nano-banana"];
+const expectedGeminiTextModels = [
+  { id: "gemini-web", label: "Gemini Web" },
+  { id: "gemini-web-3.1-flash-lite", label: "3.1 Flash-Lite" },
+  { id: "gemini-web-3.5-flash", label: "3.5 Flash" },
+  { id: "gemini-web-3.1-pro-standard", label: "3.1 Pro · 标准" },
+  { id: "gemini-web-3.1-pro-extended", label: "3.1 Pro · 扩展" },
+];
+const expectedGeminiImageModels = [...expectedGeminiTextModels, { id: "nano-banana", label: "Nano Banana" }];
 
 let tempDbDir;
 let previousDatabaseUrl;
@@ -151,11 +167,8 @@ test("Gemini bridge status returns non-sensitive local configuration hints", asy
         hasSecure1psid: true,
         hasSecure1psidts: false,
         imageModel: "gemini-web",
-        suggestedImageModels: [
-          { id: "gemini-web", label: "Gemini Web" },
-          { id: "nano-banana", label: "Nano Banana" },
-        ],
-        suggestedTextModels: [{ id: "gemini-web", label: "Gemini Web" }],
+        suggestedImageModels: expectedGeminiImageModels,
+        suggestedTextModels: expectedGeminiTextModels,
         textModel: "gemini-web",
       });
       assert.equal(response.body.includes("cookie-secret"), false);
@@ -290,8 +303,8 @@ test("Gemini bridge can create provider settings when no OpenAI-compatible API e
       assert.equal(stored.apiKey, "gemini-local-secret");
       assert.equal(stored.imageModel, "gemini-web");
       assert.equal(stored.textModel, "gemini-web");
-      assert.deepEqual(JSON.parse(stored.enabledImageModels).map((model) => model.id), ["gemini-web", "nano-banana"]);
-      assert.deepEqual(JSON.parse(stored.enabledReversePromptModels).map((model) => model.id), ["gemini-web"]);
+      assert.deepEqual(JSON.parse(stored.enabledImageModels).map((model) => model.id), expectedGeminiImageModelIds);
+      assert.deepEqual(JSON.parse(stored.enabledReversePromptModels).map((model) => model.id), expectedGeminiTextModelIds);
     });
   } finally {
     await app.close();
@@ -354,8 +367,14 @@ test("Gemini bridge adds Gemini models without replacing an existing OpenAI-comp
       assert.equal(stored.displayName, "OpenAI 兼容接口");
       assert.equal(stored.imageModel, "gpt-image-2");
       assert.equal(stored.textModel, "gpt-5.5");
-      assert.deepEqual(JSON.parse(stored.enabledImageModels).map((model) => model.id), ["gpt-image-2", "gemini-web", "nano-banana"]);
-      assert.deepEqual(JSON.parse(stored.enabledReversePromptModels).map((model) => model.id), ["gpt-5.5", "gemini-web"]);
+      assert.deepEqual(JSON.parse(stored.enabledImageModels).map((model) => `${model.channel ?? "provider"}:${model.id}`), [
+        "provider:gpt-image-2",
+        ...expectedGeminiImageModelIds.map((id) => `gemini-bridge:${id}`),
+      ]);
+      assert.deepEqual(JSON.parse(stored.enabledReversePromptModels).map((model) => `${model.channel ?? "provider"}:${model.id}`), [
+        "provider:gpt-5.5",
+        ...expectedGeminiTextModelIds.map((id) => `gemini-bridge:${id}`),
+      ]);
     });
   } finally {
     await app.close();

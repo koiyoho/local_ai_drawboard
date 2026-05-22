@@ -13,7 +13,18 @@ import {
 import { useEffect, useState, useTransition } from "react";
 
 import { apiFetch } from "@/lib/api-client";
-import { defaultProviderModelChannel, getProviderModelChannelLabel, type ConfiguredProviderModel, type ProviderModelChannel } from "@/lib/provider-models";
+import {
+  defaultProviderModelChannel,
+  encodeConfiguredModelValue,
+  getProviderModelOptionValue,
+  getProviderModelChannelLabel,
+  parseConfiguredModelValue,
+  providerImageModelCatalog,
+  providerReversePromptModelCatalog,
+  type ConfiguredProviderModel,
+  type ProviderModelCatalog,
+  type ProviderModelChannel,
+} from "@/lib/provider-models";
 
 export type ProviderSettingPayload = {
   id: string;
@@ -255,6 +266,10 @@ export function ProviderModelPoolSettings({
   const [textModel, setTextModel] = useState(initialSetting?.textModel ?? "gpt-5.5");
   const [imageModels, setImageModels] = useState<ConfiguredProviderModel[]>(getInitialImageModels(initialSetting));
   const [reversePromptModels, setReversePromptModels] = useState<ConfiguredProviderModel[]>(getInitialReversePromptModels(initialSetting));
+  const [modelCatalog, setModelCatalog] = useState<{
+    imageModels: ProviderModelCatalog;
+    reversePromptModels: ProviderModelCatalog;
+  }>({ imageModels: providerImageModelCatalog, reversePromptModels: providerReversePromptModelCatalog });
   const [status, setStatus] = useState("");
   const [isPending, startTransition] = useTransition();
   const imageEnabledCount = imageModels.filter((model) => model.enabled).length;
@@ -267,6 +282,25 @@ export function ProviderModelPoolSettings({
     setImageModels(getInitialImageModels(initialSetting));
     setReversePromptModels(getInitialReversePromptModels(initialSetting));
   }, [initialSetting?.id, initialSetting?.updatedAt]);
+
+  useEffect(() => {
+    let isMounted = true;
+    apiFetch("/api/admin/provider-models/catalog")
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({})) as Partial<typeof modelCatalog>;
+        if (!response.ok) return;
+        if (isMounted && payload.imageModels && payload.reversePromptModels) {
+          setModelCatalog({
+            imageModels: payload.imageModels,
+            reversePromptModels: payload.reversePromptModels,
+          });
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   function saveModelSettings() {
     startTransition(async () => {
@@ -330,30 +364,20 @@ export function ProviderModelPoolSettings({
             前台只展示模型名称；每个模型实际走第三方 API、Codex 兼容代理还是 Gemini Bridge，由这里统一配置。官方 Codex OAuth 本身不是图片 API key，Codex 图片通道需要本机环境配置 CODEX_IMAGE_PROXY_BASE_URL。
           </p>
           <ModelListEditor
+            catalog={modelCatalog.imageModels}
             fallbackModel={imageModel}
             label="生图 / 改图模型"
             models={imageModels}
             onFallbackModelChange={setImageModel}
             onModelsChange={setImageModels}
-            presets={[
-              { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image 2" },
-              { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image 2 · Codex Proxy" },
-              { channel: "gemini-bridge", enabled: true, id: "nano-banana", label: "Nano Banana" },
-              { channel: "gemini-bridge", enabled: true, id: "gemini-web", label: "Gemini Web" },
-            ]}
           />
           <ModelListEditor
+            catalog={modelCatalog.reversePromptModels}
             fallbackModel={textModel}
             label="反推 / 提示词模型"
             models={reversePromptModels}
             onFallbackModelChange={setTextModel}
             onModelsChange={setReversePromptModels}
-            presets={[
-              { channel: "provider", enabled: true, id: "gpt-5.5", label: "GPT 5.5" },
-              { channel: "codex", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Codex Proxy" },
-              { channel: "provider", enabled: true, id: "gpt-5.5-mini", label: "GPT 5.5 Mini" },
-              { channel: "gemini-bridge", enabled: true, id: "gemini-web", label: "Gemini Web" },
-            ]}
           />
           <div className="provider-actions provider-model-save-row">
             <button disabled={isPending || !setting} onClick={saveModelSettings} type="button">
@@ -413,22 +437,22 @@ function ProviderHistoryList({
 }
 
 function ModelListEditor({
+  catalog,
   fallbackModel,
   label,
   models,
   onFallbackModelChange,
   onModelsChange,
-  presets,
 }: {
+  catalog: ProviderModelCatalog;
   fallbackModel: string;
   label: string;
   models: ConfiguredProviderModel[];
   onFallbackModelChange: (value: string) => void;
   onModelsChange: (models: ConfiguredProviderModel[]) => void;
-  presets: ConfiguredProviderModel[];
 }) {
   function updateModel(index: number, patch: Partial<ConfiguredProviderModel>) {
-    onModelsChange(models.map((model, modelIndex) => modelIndex === index ? { ...model, ...patch } : model));
+    onModelsChange(models.map((model, modelIndex) => modelIndex === index ? normalizeEditedModel({ ...model, ...patch }, catalog) : model));
   }
 
   function addModel() {
@@ -439,9 +463,13 @@ function ModelListEditor({
     onModelsChange(models.filter((_, modelIndex) => modelIndex !== index));
   }
 
+  function selectFallbackModel(value: string) {
+    onFallbackModelChange(getStoredFallbackModelValue(value));
+  }
+
   function addPreset(preset: ConfiguredProviderModel) {
-    if (models.some((model) => model.id === preset.id)) {
-      onModelsChange(models.map((model) => model.id === preset.id ? {
+    if (models.some((model) => model.id === preset.id && (model.channel ?? defaultProviderModelChannel) === (preset.channel ?? defaultProviderModelChannel))) {
+      onModelsChange(models.map((model) => model.id === preset.id && (model.channel ?? defaultProviderModelChannel) === (preset.channel ?? defaultProviderModelChannel) ? {
         ...model,
         channel: preset.channel ?? defaultProviderModelChannel,
         enabled: true,
@@ -467,16 +495,26 @@ function ModelListEditor({
         </div>
       </div>
       <div className="provider-model-presets" aria-label={`${label}常用模型`}>
-        {presets.map((preset) => (
-          <button key={`${preset.channel ?? defaultProviderModelChannel}-${preset.id}`} onClick={() => addPreset(preset)} type="button">
-            <AppIcon icon={IconPlus} size="sm" />
-            {getProviderModelChannelLabel(preset.channel)} · {preset.label}
-          </button>
-        ))}
+        {getCatalogPresets(catalog).map((preset) => {
+          const exists = models.some((model) => model.id === preset.id && (model.channel ?? defaultProviderModelChannel) === (preset.channel ?? defaultProviderModelChannel));
+          return (
+            <button disabled={exists} key={`${preset.channel ?? defaultProviderModelChannel}-${preset.id}`} onClick={() => addPreset(preset)} type="button">
+              <AppIcon icon={IconPlus} size="sm" />
+              {getProviderModelChannelLabel(preset.channel)} · {preset.label}
+            </button>
+          );
+        })}
       </div>
       <label className="provider-default-model">
         默认模型
-        <input onChange={(event) => onFallbackModelChange(event.target.value)} value={fallbackModel} />
+        <select onChange={(event) => selectFallbackModel(event.target.value)} value={getFallbackModelValue(fallbackModel, models)}>
+          {getFallbackModelOptions(catalog, models).map((model) => (
+            <option key={`fallback-${model.channel}-${model.id}`} value={encodeConfiguredModelValue(model)}>
+              {getProviderModelChannelLabel(model.channel)} · {model.label}
+            </option>
+          ))}
+          {!getFallbackModelOptions(catalog, models).some((model) => encodeConfiguredModelValue(model) === fallbackModel) ? <option value={fallbackModel}>{fallbackModel}</option> : null}
+        </select>
       </label>
       <div className="provider-model-list">
         {models.map((model, index) => (
@@ -492,7 +530,15 @@ function ModelListEditor({
             <label>
               调用通道
               <select
-                onChange={(event) => updateModel(index, { channel: event.target.value as ProviderModelChannel })}
+                onChange={(event) => {
+                  const channel = event.target.value as ProviderModelChannel;
+                  const option = catalog[channel][0];
+                  updateModel(index, {
+                    channel,
+                    id: option?.id ?? "",
+                    label: option?.label ?? "",
+                  });
+                }}
                 value={model.channel ?? defaultProviderModelChannel}
               >
                 <option value="provider">第三方 API</option>
@@ -501,10 +547,27 @@ function ModelListEditor({
               </select>
             </label>
             <label>
+              可选模型
+              <select
+                onChange={(event) => {
+                  const option = getCatalogOption(catalog, model.channel, event.target.value);
+                  updateModel(index, { id: event.target.value, label: option?.label ?? event.target.value });
+                }}
+                value={model.id}
+              >
+                {(catalog[model.channel ?? defaultProviderModelChannel] ?? []).map((option) => (
+                  <option key={`${model.channel ?? defaultProviderModelChannel}-${option.id}`} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+                {model.id && !getCatalogOption(catalog, model.channel, model.id) ? <option value={model.id}>{model.id}</option> : null}
+              </select>
+            </label>
+            <label>
               模型 ID
               <input
-                onChange={(event) => updateModel(index, { id: event.target.value })}
-                placeholder="模型 ID"
+                onChange={(event) => updateModel(index, { id: event.target.value, label: model.label || event.target.value })}
+                placeholder="输入自定义模型 ID"
                 value={model.id}
               />
             </label>
@@ -524,6 +587,50 @@ function ModelListEditor({
       </div>
     </div>
   );
+}
+
+function getCatalogPresets(catalog: ProviderModelCatalog): ConfiguredProviderModel[] {
+  return (["provider", "codex", "gemini-bridge"] as ProviderModelChannel[]).flatMap((channel) =>
+    catalog[channel].map((model) => ({ ...model, channel, enabled: true })),
+  );
+}
+
+function getCatalogOption(catalog: ProviderModelCatalog, channel: ProviderModelChannel | undefined, id: string) {
+  return catalog[channel ?? defaultProviderModelChannel].find((model) => model.id === id);
+}
+
+function getFallbackModelOptions(catalog: ProviderModelCatalog, models: ConfiguredProviderModel[]) {
+  const options = [
+    ...models.filter((model) => model.enabled && model.id.trim()),
+    ...getCatalogPresets(catalog),
+  ];
+  return options.filter((model, index, all) =>
+    all.findIndex((candidate) => encodeConfiguredModelValue(candidate) === encodeConfiguredModelValue(model)) === index,
+  );
+}
+
+function getFallbackModelValue(fallbackModel: string, models: ConfiguredProviderModel[]) {
+  const parsedFallback = parseConfiguredModelValue(fallbackModel);
+  const configuredModel = parsedFallback.channel
+    ? models.find((model) =>
+        model.enabled &&
+        model.id === parsedFallback.id &&
+        (model.channel ?? defaultProviderModelChannel) === parsedFallback.channel)
+    : models.find((model) =>
+        model.enabled &&
+        model.id === parsedFallback.id &&
+        (model.channel ?? defaultProviderModelChannel) === defaultProviderModelChannel) ??
+      models.find((model) => model.enabled && model.id === parsedFallback.id);
+  return configuredModel ? getProviderModelOptionValue(configuredModel) : fallbackModel;
+}
+
+function getStoredFallbackModelValue(value: string) {
+  return value;
+}
+
+function normalizeEditedModel(model: ConfiguredProviderModel, catalog: ProviderModelCatalog): ConfiguredProviderModel {
+  const option = getCatalogOption(catalog, model.channel, model.id);
+  return option && !model.label.trim() ? { ...model, label: option.label } : model;
 }
 
 function getInitialImageModels(setting: ProviderSettingPayload | null): ConfiguredProviderModel[] {

@@ -81,7 +81,9 @@ import {
   boardAspectRatioOptions,
   getAspectFromImageSize,
   getAvailableQualityOptions,
+  getBoardAspectRatioSelection,
   getImageSizeForAspectQuality,
+  getImageSizeForSourceAspect,
   getQualityFromImageSize,
   type BoardArtStyle,
   type BoardAspectRatio,
@@ -94,6 +96,21 @@ import {
   isValidImageSize,
   type ImageSize,
 } from "@/lib/image";
+import {
+  buildMultiAnglePrompt,
+  defaultMultiAngleOptionValue,
+  multiAngleOptions,
+  type MultiAngleOptionValue,
+} from "@/lib/multi-angle-generation";
+import type { PromptSafetyMode } from "@/lib/prompt-safety";
+import {
+  getDefaultProviderModelSelection,
+  getProviderModelOptionValue,
+  normalizeProviderModelSelection,
+  parseConfiguredModelValue,
+  providerModelOptionMatchesSelection,
+  type ProviderModelChannel,
+} from "@/lib/provider-models";
 import {
   isReferenceRole,
   referenceRoleInstruction,
@@ -166,11 +183,11 @@ type GenerationJobParams = {
   model?: string;
   referenceAssetIds?: string[];
   referenceItems?: ReferenceItem[];
-  replacementType?: string;
   size?: string;
 };
 
 type ImageModelOption = {
+  channel?: ProviderModelChannel;
   id: string;
   label: string;
 };
@@ -181,13 +198,6 @@ type MaskState = {
   strokes: MaskStroke[];
 };
 
-type ReplacementType =
-  | "product"
-  | "upper_clothing"
-  | "full_outfit"
-  | "logo_pattern"
-  | "accessory"
-  | "background";
 type PreserveStrength = "strict" | "balanced" | "flexible";
 type ReferenceFit = "balanced" | "shape" | "material" | "exact";
 type ReferenceWeight = "low" | "medium" | "high";
@@ -208,6 +218,8 @@ type ResolvedReferenceAsset = {
   asset: AssetPayload;
 };
 type PromptAssistAction = "optimize" | "expand" | "variations" | "translate";
+type PromptAssistEngine = "standard" | "skill2";
+type PromptAssistSource = "assist" | "safety";
 type PromptAssistImageType =
   | "auto"
   | "ui"
@@ -243,8 +255,8 @@ type AppSnapshot = {
   referenceAssetIdsByRole?: ReferenceAssetMap;
   referenceConflictStrategy?: ReferenceConflictStrategy;
   referenceItems?: ReferenceItem[];
-  replacementType?: ReplacementType;
   reversePromptByAssetId?: Record<string, string>;
+  selectedAspectRatio?: BoardAspectRatio;
   sourceImageSize?: ImageSize;
   selectedImageModel?: string;
   sourceAssetId?: string;
@@ -372,44 +384,8 @@ const referenceRoleGroups: Array<{
 const ASSET_LIBRARY_PAGE_SIZE = 50;
 const ASSET_LIBRARY_SEARCH_DEBOUNCE_MS = 250;
 
-const replacementTypeOptions: Array<{ value: ReplacementType; label: string; instruction: string }> = [
-  {
-    value: "product",
-    label: "替换手中商品",
-    instruction:
-      "Replace only the masked product or object held by the person. Match the product reference closely while preserving the person's identity, pose, hands, lighting, and background.",
-  },
-  {
-    value: "upper_clothing",
-    label: "替换上衣",
-    instruction:
-      "Replace only the masked upper clothing. Follow the clothing reference closely while preserving body shape, face, pose, lighting, and unmasked areas.",
-  },
-  {
-    value: "full_outfit",
-    label: "替换整套穿搭",
-    instruction:
-      "Replace only the masked outfit. Follow the clothing reference closely while preserving the person's identity, pose, body proportions, lighting, and background.",
-  },
-  {
-    value: "logo_pattern",
-    label: "替换 Logo / 印花",
-    instruction:
-      "Replace only the masked logo, graphic, print, patch, or clothing mark. Match the logo reference closely while preserving the garment color, fabric texture, folds, lighting, perspective, and all unmasked areas.",
-  },
-  {
-    value: "accessory",
-    label: "替换配饰",
-    instruction:
-      "Replace only the masked accessory. Match the accessory reference closely while preserving the person, pose, lighting, and unmasked areas.",
-  },
-  {
-    value: "background",
-    label: "替换背景",
-    instruction:
-      "Replace only the masked background area. Follow the background reference or prompt while preserving the person, product, foreground edges, and lighting consistency.",
-  },
-];
+const targetEditInstruction =
+  "Use the first image as the source image. Identify the target object or region from the user's instruction and replace that target with the relevant reference content; do not simply reproduce the source image unchanged.";
 
 const preserveStrengthOptions: Array<{ value: PreserveStrength; label: string; instruction: string }> = [
   {
@@ -507,6 +483,7 @@ const BOARD_NUDGE_LARGE_STEP = 10;
 const DEFAULT_VIEWPORT: BoardViewport = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_TOOLBAR_OFFSET: Point = { x: 0, y: -68 };
 const DEFAULT_BOARD_ASPECT_RATIO: BoardAspectRatio = "16:9";
+const DEFAULT_EDIT_ASPECT_RATIO: BoardAspectRatio = "auto";
 const DEFAULT_BOARD_QUALITY: BoardQuality = "2k";
 const DEFAULT_BOARD_ART_STYLE: BoardArtStyle = "auto";
 
@@ -535,6 +512,7 @@ const boardReorderActions: Array<BoardToolbarAction<BoardReorderAction>> = [
   { action: "backward", icon: IconSendBackward, title: "下移一层" },
   { action: "back", icon: IconSendToBack, title: "置于底层" },
 ];
+const pendingReversePromptStorageKey = "aiboard.pendingReversePrompt";
 
 const mobileWorkspaceViewLabels: Record<WorkspaceView, string> = {
   canvas: "画布",
@@ -598,6 +576,8 @@ export function BoardWorkspace({
   const [toolbarOffset, setToolbarOffset] = useState<Point>(initialAppSnapshot.toolbarOffset ?? DEFAULT_TOOLBAR_OFFSET);
   const [sourcePrompt, setSourcePrompt] = useState(initialAppSnapshot.sourcePrompt ?? "");
   const [promptAssistAction, setPromptAssistAction] = useState<PromptAssistAction>("optimize");
+  const [promptAssistEngine, setPromptAssistEngine] = useState<PromptAssistEngine>("standard");
+  const [promptAssistSource, setPromptAssistSource] = useState<PromptAssistSource>("assist");
   const [promptAssistImageType, setPromptAssistImageType] = useState<PromptAssistImageType>("auto");
   const [promptAssistResult, setPromptAssistResult] = useState<PromptAssistResult | null>(null);
   const [isPromptAssistDialogOpen, setIsPromptAssistDialogOpen] = useState(false);
@@ -608,7 +588,7 @@ export function BoardWorkspace({
     initialAppSnapshot.sourceImageSize ?? DEFAULT_SOURCE_IMAGE_SIZE,
   );
   const [selectedAspectRatio, setSelectedAspectRatio] = useState<BoardAspectRatio>(
-    getAspectFromImageSize(initialAppSnapshot.sourceImageSize ?? getImageSizeForAspectQuality(DEFAULT_BOARD_ASPECT_RATIO, DEFAULT_BOARD_QUALITY)),
+    initialAppSnapshot.selectedAspectRatio ?? DEFAULT_EDIT_ASPECT_RATIO,
   );
   const [selectedQuality, setSelectedQuality] = useState<BoardQuality>(
     getQualityFromImageSize(initialAppSnapshot.sourceImageSize ?? getImageSizeForAspectQuality(DEFAULT_BOARD_ASPECT_RATIO, DEFAULT_BOARD_QUALITY)),
@@ -682,9 +662,6 @@ export function BoardWorkspace({
   const [activeGeneration, setActiveGeneration] = useState<ActiveGeneration | null>(null);
   const [clockNowMs, setClockNowMs] = useState(Date.now());
   const [sourceAssetId, setSourceAssetId] = useState(initialAppSnapshot.sourceAssetId ?? "");
-  const [replacementType, setReplacementType] = useState<ReplacementType>(
-    initialAppSnapshot.replacementType ?? "product",
-  );
   const [preserveStrength, setPreserveStrength] = useState<PreserveStrength>(
     initialAppSnapshot.preserveStrength ?? DEFAULT_PRESERVE_STRENGTH,
   );
@@ -819,14 +796,15 @@ export function BoardWorkspace({
     : null;
   const primaryReferenceAsset = referenceAssets[0]?.asset;
   const selectedSourceQualityOptions = getAvailableQualityOptions(selectedAspectRatio);
-  const selectedSourceSize = getImageSizeForAspectQuality(selectedAspectRatio, selectedQuality);
+  const selectedFixedSourceSize = getImageSizeForAspectQuality(selectedAspectRatio, selectedQuality);
+  const sourceAspectImageSize = sourceAssetSize ? getImageSizeForSourceAspect(sourceAssetSize) : selectedFixedSourceSize;
+  const selectedSourceSize = selectedAspectRatio === "auto" ? sourceAspectImageSize : selectedFixedSourceSize;
   const selectedSourceSizeLabel =
-    selectedSourceQualityOptions.find((option) => option.value === selectedQuality)?.size ?? selectedSourceSize;
+    selectedAspectRatio === "auto"
+      ? `自动 · ${selectedSourceSize}`
+      : selectedSourceQualityOptions.find((option) => option.value === selectedQuality)?.size ?? selectedSourceSize;
   const currentArtStyleOption =
     boardArtStyleOptions.find((option) => option.value === artStyle) ?? boardArtStyleOptions[0];
-  const replacementTypeOption =
-    replacementTypeOptions.find((option) => option.value === replacementType) ??
-    replacementTypeOptions[0];
   const preserveStrengthOption =
     preserveStrengthOptions.find((option) => option.value === preserveStrength) ??
     preserveStrengthOptions[1];
@@ -888,7 +866,8 @@ export function BoardWorkspace({
     maskStrokes.length > 0 ? `${maskStrokes.length} 条蒙版` : "整图改图",
   ].join(" · ");
   const selectedImageModelLabel =
-    imageModelOptions.find((model) => model.id === selectedImageModel)?.label ?? selectedImageModel;
+    imageModelOptions.find((model) => getProviderModelOptionValue(model) === selectedImageModel || model.id === selectedImageModel)?.label ??
+    parseConfiguredModelValue(selectedImageModel).id;
   const desktopGenerateActionMeta = [
     `${generationCount} 张`,
     selectedSourceSizeLabel,
@@ -928,8 +907,8 @@ export function BoardWorkspace({
       referenceAssetIdsByRole,
       referenceConflictStrategy,
       referenceItems,
-      replacementType,
       reversePromptByAssetId,
+      selectedAspectRatio,
       selectedImageModel,
       sourceImageSize,
       sourceAssetId,
@@ -950,8 +929,8 @@ export function BoardWorkspace({
       referenceAssetIdsByRole,
       referenceConflictStrategy,
       referenceItems,
-      replacementType,
       reversePromptByAssetId,
+      selectedAspectRatio,
       selectedImageModel,
       sourceAssetId,
       sourceImageSize,
@@ -1133,6 +1112,16 @@ export function BoardWorkspace({
   }, []);
 
   useEffect(() => {
+    const pendingPrompt = window.localStorage.getItem(pendingReversePromptStorageKey)?.trim();
+    if (!pendingPrompt) return;
+    window.localStorage.removeItem(pendingReversePromptStorageKey);
+    updateSourcePromptDraft(pendingPrompt);
+    setDesktopView("generate");
+    setMobileView("generate");
+    setStatus("已载入反推提示词");
+  }, []);
+
+  useEffect(() => {
     scheduleSave();
   }, [
     generationCount,
@@ -1146,7 +1135,6 @@ export function BoardWorkspace({
     referenceAssetIds,
     referenceAssetIdsByRole,
     referenceItems,
-    replacementType,
     reversePromptByAssetId,
     scheduleSave,
     sourceImageSize,
@@ -1176,18 +1164,18 @@ export function BoardWorkspace({
         if (Array.isArray(nextImageModels) && nextImageModels.length > 0) {
           setImageModelOptions(nextImageModels);
           const nextModel =
-            selectedImageModel && nextImageModels.some((model) => model.id === selectedImageModel)
-              ? selectedImageModel
-              : payload.selectedImageModel ?? payload.selectedModel ?? nextImageModels[0].id;
+            selectedImageModel && nextImageModels.some((model) => providerModelOptionMatchesSelection(model, selectedImageModel))
+              ? normalizeProviderModelSelection(nextImageModels, selectedImageModel)
+              : getDefaultProviderModelSelection(nextImageModels, payload.selectedImageModel ?? payload.selectedModel);
           setSelectedImageModel(nextModel);
           setImageModelStatus(payload.error ?? "");
         }
         if (Array.isArray(payload.reversePromptModels) && payload.reversePromptModels.length > 0) {
           setReversePromptModelOptions(payload.reversePromptModels);
           setSelectedReversePromptModel((current) =>
-            payload.reversePromptModels!.some((model) => model.id === current)
-              ? current
-              : payload.selectedReversePromptModel ?? payload.reversePromptModels![0].id,
+            payload.reversePromptModels!.some((model) => providerModelOptionMatchesSelection(model, current))
+              ? normalizeProviderModelSelection(payload.reversePromptModels!, current)
+              : getDefaultProviderModelSelection(payload.reversePromptModels!, payload.selectedReversePromptModel),
           );
         }
       } catch {
@@ -1215,9 +1203,12 @@ export function BoardWorkspace({
     setIsLayerPanelOpen(true);
   }
 
-  function saveCurrentBoard() {
-    void saveSnapshot({ kind: "manual", name: `手动保存 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}` })
-      .catch((error) => setStatus(getFriendlyErrorMessage(error, "保存失败")));
+  async function saveCurrentBoard() {
+    try {
+      await saveSnapshot({ kind: "manual", name: `手动保存 ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}` });
+    } catch (error) {
+      setStatus(getFriendlyErrorMessage(error, "保存失败"));
+    }
   }
 
   function openAdmin() {
@@ -1234,6 +1225,7 @@ export function BoardWorkspace({
     if (isRenamed && boardId === board.id) {
       setBoard((current) => ({ ...current, name }));
     }
+    return isRenamed;
   }
 
   function applyAppSnapshot(snapshot: AppSnapshot) {
@@ -1251,14 +1243,13 @@ export function BoardWorkspace({
     setReferenceItems(nextReferenceItems);
     setReferenceAssetIds(nextReferenceItems.map((item) => item.assetId));
     setReferenceAssetIdsByRole(getReferenceAssetMapFromItems(nextReferenceItems));
-    setReplacementType(snapshot.replacementType ?? "product");
     setReversePromptByAssetId(snapshot.reversePromptByAssetId ?? {});
     const nextModel = snapshot.selectedImageModel || DEFAULT_IMAGE_MODEL;
     setSelectedImageModel(nextModel);
     setSourceAssetId(snapshot.sourceAssetId ?? "");
     const nextSourceSize = snapshot.sourceImageSize ?? DEFAULT_SOURCE_IMAGE_SIZE;
     setSourceImageSize(nextSourceSize);
-    setSelectedAspectRatio(getAspectFromImageSize(nextSourceSize));
+    setSelectedAspectRatio(snapshot.selectedAspectRatio ?? DEFAULT_EDIT_ASPECT_RATIO);
     setSelectedQuality(getQualityFromImageSize(nextSourceSize));
     setSourcePrompt(snapshot.sourcePrompt ?? "");
     setToolbarOffset(snapshot.toolbarOffset ?? DEFAULT_TOOLBAR_OFFSET);
@@ -1537,7 +1528,6 @@ export function BoardWorkspace({
             model: selectedImageModel,
             preserveStrength,
             referenceFit,
-            replacementType,
             size: selectedSourceSize,
           }),
           prompt: promptText,
@@ -2409,7 +2399,6 @@ export function BoardWorkspace({
       generate(primaryReferenceAsset ? "local_replace" : "inpaint", {
         preserveStrength: "strict",
         referenceFit: primaryReferenceAsset ? "exact" : referenceFit,
-        replacementType: "product",
       });
       return;
     }
@@ -2418,7 +2407,6 @@ export function BoardWorkspace({
         wholeImageEdit: true,
         preserveStrength: "balanced",
         referenceFit: "exact",
-        replacementType: "product",
       });
       return;
     }
@@ -2426,14 +2414,17 @@ export function BoardWorkspace({
   }
 
   function generateSourceFromPrompt() {
+    const sourceGenerationSize = selectedAspectRatio === "auto"
+      ? getImageSizeForAspectQuality(DEFAULT_BOARD_ASPECT_RATIO, selectedQuality)
+      : selectedSourceSize;
     generate("text_to_image", {
       noticeScope: "source",
       promptText: sourcePrompt,
-      size: selectedSourceSize,
+      size: sourceGenerationSize,
     });
   }
 
-  async function runPromptAssist() {
+  async function runPromptAssist(engine: PromptAssistEngine = promptAssistEngine) {
     const promptText = sourcePrompt.trim();
     if (!promptText) {
       setPromptAssistError("请先输入 AI 生图提示词");
@@ -2442,6 +2433,8 @@ export function BoardWorkspace({
     }
     const requestId = promptAssistRequestIdRef.current + 1;
     promptAssistRequestIdRef.current = requestId;
+    setPromptAssistEngine(engine);
+    setPromptAssistSource("assist");
     setIsPromptAssistLoading(true);
     setPromptAssistError("");
     setPromptAssistResult(null);
@@ -2455,6 +2448,7 @@ export function BoardWorkspace({
           artStyleLabel: currentArtStyleOption.label,
           artStyleInstruction: currentArtStyleOption.instruction,
           boardId: board.id,
+          engine,
           imageType: promptAssistImageType,
           prompt: promptText,
           referenceContext: buildPromptAssistReferenceContext(referenceAssets),
@@ -2471,10 +2465,62 @@ export function BoardWorkspace({
         variations: getStringArray(payload.variations),
       });
       setIsPromptAssistDialogOpen(false);
-      setStatus("已生成提示词建议");
+      setStatus(engine === "skill2" ? "已生成辅助提示词2建议" : "已生成提示词建议");
     } catch (error) {
       if (requestId !== promptAssistRequestIdRef.current) return;
       const message = getFriendlyErrorMessage(error, "提示词辅助失败");
+      setPromptAssistError(message);
+      setStatus(message);
+    } finally {
+      if (requestId === promptAssistRequestIdRef.current) {
+        setIsPromptAssistLoading(false);
+      }
+    }
+  }
+
+  async function runPromptSafetyOptimizer(mode: PromptSafetyMode = "standard") {
+    const promptText = sourcePrompt.trim();
+    if (!promptText) {
+      setPromptAssistError("请先输入 AI 生图提示词");
+      setStatus("请先输入 AI 生图提示词");
+      return;
+    }
+    const requestId = promptAssistRequestIdRef.current + 1;
+    promptAssistRequestIdRef.current = requestId;
+    setPromptAssistSource("safety");
+    setIsPromptAssistLoading(true);
+    setPromptAssistError("");
+    setPromptAssistResult(null);
+    try {
+      const response = await apiFetch("/api/prompt-safety/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          boardId: board.id,
+          mode,
+          prompt: promptText,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        applied?: boolean;
+        error?: string;
+        prompt?: string;
+        reasons?: string[];
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "提示词安全优化失败");
+      }
+      if (requestId !== promptAssistRequestIdRef.current) return;
+      setPromptAssistResult({
+        notes: getPromptSafetyNotes(getStringArray(payload.reasons)),
+        prompt: typeof payload.prompt === "string" ? payload.prompt : promptText,
+        variations: [],
+      });
+      setIsPromptAssistDialogOpen(false);
+      setStatus(payload.applied ? "已生成安全优化提示词" : "当前提示词未发现需要优化的高风险表达");
+    } catch (error) {
+      if (requestId !== promptAssistRequestIdRef.current) return;
+      const message = getFriendlyErrorMessage(error, "提示词安全优化失败");
       setPromptAssistError(message);
       setStatus(message);
     } finally {
@@ -2507,14 +2553,19 @@ export function BoardWorkspace({
     setSelectedAspectRatio(value);
     setSelectedQuality(nextQuality);
     setSourceImageSize(nextSize);
-    scheduleSave({ appSnapshot: { sourceImageSize: nextSize } });
+    scheduleSave({ appSnapshot: { selectedAspectRatio: value, sourceImageSize: nextSize } });
   }
 
   function updateSourceQuality(value: BoardQuality) {
+    if (selectedAspectRatio === "auto") {
+      setSelectedQuality(value);
+      scheduleSave();
+      return;
+    }
     const nextSize = getImageSizeForAspectQuality(selectedAspectRatio, value);
     setSelectedQuality(value);
     setSourceImageSize(nextSize);
-    scheduleSave({ appSnapshot: { sourceImageSize: nextSize } });
+    scheduleSave({ appSnapshot: { selectedAspectRatio, sourceImageSize: nextSize } });
   }
 
   function updateArtStyle(value: BoardArtStyle) {
@@ -2545,7 +2596,6 @@ export function BoardWorkspace({
       promptText?: string;
       referenceFit?: ReferenceFit;
       referenceAssetsOverride?: ResolvedReferenceAsset[];
-      replacementType?: ReplacementType;
       size?: ImageSize;
       wholeImageEdit?: boolean;
     },
@@ -2594,10 +2644,6 @@ export function BoardWorkspace({
             addAssetsToVisibleList([maskAsset]);
           }
         }
-        const effectiveReplacementTypeOption =
-          replacementTypeOptions.find(
-            (option) => option.value === (options?.replacementType ?? replacementType),
-          ) ?? replacementTypeOption;
         const effectivePreserveStrengthOption =
           preserveStrengthOptions.find(
             (option) => option.value === (options?.preserveStrength ?? preserveStrength),
@@ -2609,7 +2655,6 @@ export function BoardWorkspace({
           mode === "local_replace"
             ? buildLocalReplacePrompt(
                 effectivePrompt,
-                effectiveReplacementTypeOption,
                 effectiveReferenceAssets,
                 effectivePreserveStrengthOption,
                 effectiveReferenceFitOption,
@@ -2649,7 +2694,6 @@ export function BoardWorkspace({
           maskAssetId,
           referenceAssetIds: requestReferenceAssetIds,
           referenceItems: requestReferenceItems,
-          replacementType: mode === "local_replace" ? effectiveReplacementTypeOption.label : undefined,
           count: generationCount,
         });
         const payload = await waitForGenerationJob(job.id);
@@ -3334,7 +3378,6 @@ export function BoardWorkspace({
     const params = getPromptRecipeParams(recipe.params);
     if (recipe.mode === "inpaint") {
       setPrompt(recipe.prompt);
-      if (params.replacementType) setReplacementType(params.replacementType);
       if (params.preserveStrength) setPreserveStrength(params.preserveStrength);
       setDesktopView("edit");
       setMobileView("edit");
@@ -3479,6 +3522,39 @@ export function BoardWorkspace({
     })();
   }
 
+  function generateSelectedImageMultiAngle(angle: MultiAngleOptionValue = defaultMultiAngleOptionValue) {
+    void (async () => {
+      try {
+        const source = getSelectedImageAssetFromDocument() ?? sourceAsset;
+        if (!source) throw new Error("请先选择一张图片");
+        setSourceAssetId(source.id);
+        setDesktopView("edit");
+        setMobileView("edit");
+        setCanvasContextMenu(null);
+        const candidateCount = getValidGenerationCount(generationCount);
+        const multiAnglePrompt = buildMultiAnglePrompt({
+          angle,
+          candidateCount,
+          userInstruction: prompt,
+        });
+        await generateImageEdit({
+          count: candidateCount,
+          source,
+          promptText: multiAnglePrompt,
+          placement: getSelectedImagePlacementFromDocument(),
+          statusText: "正在生成多角度候选，结果会插入到原图右侧",
+          doneText: "已生成多角度候选",
+          promptAlreadyStyled: true,
+          taskLabel: "多角度",
+        });
+      } catch (error) {
+        const errorText = getFriendlyErrorMessage(error, "生成多角度失败");
+        setStatus(errorText);
+        setGenerationNotice({ scope: "edit", tone: "error", text: errorText });
+      }
+    })();
+  }
+
   function editSelectedImageFromPrompt() {
     void (async () => {
       try {
@@ -3539,7 +3615,6 @@ export function BoardWorkspace({
       setPrompt(
         "Replace the marked product area with the product reference. Keep hands, pose, lighting, background, and all unmasked regions stable.",
       );
-      setReplacementType("product");
       setPreserveStrength("strict");
       setReferenceFit("exact");
       setDesktopView("edit");
@@ -3551,7 +3626,6 @@ export function BoardWorkspace({
       setPrompt(
         "Replace only the selected outfit with the clothing reference. Preserve face, body proportions, pose, hands, lighting, and background.",
       );
-      setReplacementType("full_outfit");
       setPreserveStrength("strict");
       setReferenceFit("exact");
       setDesktopView("edit");
@@ -3565,7 +3639,6 @@ export function BoardWorkspace({
     setPrompt(
       "Generate a realistic application scene using the logo reference. Keep the logo readable, correctly proportioned, and naturally integrated.",
     );
-    setReplacementType("logo_pattern");
     setPreserveStrength("balanced");
     setReferenceFit("exact");
     setDesktopView("generate");
@@ -3580,6 +3653,7 @@ export function BoardWorkspace({
     placement?: ShapePlacement;
     statusText: string;
     doneText: string;
+    promptAlreadyStyled?: boolean;
     taskLabel?: string;
   }) {
     const generationStartedAtMs = Date.now();
@@ -3592,7 +3666,9 @@ export function BoardWorkspace({
     setStatus(`${input.statusText}，已运行 0 秒`);
     setGenerationNotice(null);
     const beforeGenerationAssetIds = new Set(board.assets.map((asset) => asset.id));
-    const promptText = appendArtStyleInstruction(input.promptText, artStyle);
+    const promptText = input.promptAlreadyStyled
+      ? input.promptText
+      : appendArtStyleInstruction(input.promptText, artStyle);
 
     let payload: { job: JobPayload; results: AssetPayload[] };
     try {
@@ -3810,11 +3886,27 @@ export function BoardWorkspace({
           </label>
           <button
             disabled={isPromptAssistLoading || !sourcePrompt.trim()}
-            onClick={() => void runPromptAssist()}
+            onClick={() => void runPromptAssist("standard")}
             type="button"
           >
             {isPromptAssistLoading ? <AppIcon icon={IconLoading} className="spin" size="md" /> : <AppIcon icon={IconAi} size="md" />}
             辅助提示词
+          </button>
+          <button
+            disabled={isPromptAssistLoading || !sourcePrompt.trim()}
+            onClick={() => void runPromptAssist("skill2")}
+            type="button"
+          >
+            {isPromptAssistLoading ? <AppIcon icon={IconLoading} className="spin" size="md" /> : <AppIcon icon={IconAi} size="md" />}
+            辅助提示词2
+          </button>
+          <button
+            disabled={isPromptAssistLoading || !sourcePrompt.trim()}
+            onClick={() => void runPromptSafetyOptimizer("standard")}
+            type="button"
+          >
+            {isPromptAssistLoading ? <AppIcon icon={IconLoading} className="spin" size="md" /> : <AppIcon icon={IconAi} size="md" />}
+            安全优化器
           </button>
         </div>
         {promptAssistError ? <p className="generation-result-hint error">{promptAssistError}</p> : null}
@@ -3973,6 +4065,14 @@ export function BoardWorkspace({
   }
 
   function renderQualityControls() {
+    if (selectedAspectRatio === "auto") {
+      return (
+        <div className="creative-field-group">
+          <div className="creative-field-title">画质选项</div>
+          <p className="muted">当前输出：{selectedSourceSizeLabel}</p>
+        </div>
+      );
+    }
     return (
       <div className="creative-field-group">
         <div className="creative-field-title">画质选项</div>
@@ -4014,6 +4114,22 @@ export function BoardWorkspace({
           </button>
         </div>
       </div>
+    );
+  }
+
+  function renderImageModelSelect(id: string) {
+    return (
+      <label className="creative-model-select" htmlFor={id}>
+        <span>模型选择</span>
+        <select id={id} onChange={(event) => updateSelectedImageModel(event.target.value)} value={selectedImageModel}>
+          {imageModelOptions.map((model) => (
+            <option key={getProviderModelOptionValue(model)} value={getProviderModelOptionValue(model)}>
+              {model.label}
+            </option>
+          ))}
+        </select>
+        {imageModelStatus ? <em>{imageModelStatus}</em> : null}
+      </label>
     );
   }
 
@@ -4350,7 +4466,7 @@ export function BoardWorkspace({
           onClick={() => openAssetPreview(asset)}
           type="button"
         >
-          <img alt="" src={apiUrl(asset.publicUrl)} />
+          <img alt="" decoding="async" loading="lazy" src={apiUrl(getAssetThumbnailUrl(asset))} />
         </button>
         <div className="asset-card-actions">
           <button
@@ -4476,7 +4592,7 @@ export function BoardWorkspace({
   function renderTopbarAction(
     label: string,
     icon: typeof IconSave,
-    onClick: () => void,
+    onClick: () => void | Promise<unknown>,
     options: { disabled?: boolean; loading?: boolean; primary?: boolean } = {},
   ) {
     return (
@@ -4613,13 +4729,14 @@ export function BoardWorkspace({
   }
 
   function renderBoardCanvasShell(options: { mobile?: boolean } = {}) {
+    const record = latestGenerationRecord;
     return (
       <section className={options.mobile ? "mobile-canvas-stage" : "canvas-area"} ref={canvasAreaRef}>
         <div className={options.mobile ? "mobile-canvas-meta" : "canvas-meta"}>
           <span>{currentPageName}</span>
           <span>{selectionInfo.selectedCount} 个选中 / {selectionInfo.pageShapeCount} 个对象</span>
-          {shouldShowLatestGenerationRecord ? (
-            <span>{latestGenerationRecord.modeLabel}：{latestGenerationRecord.status}</span>
+          {shouldShowLatestGenerationRecord && record ? (
+            <span>{record.modeLabel}：{record.status}</span>
           ) : null}
           <span>{currentStatusText}</span>
         </div>
@@ -4677,6 +4794,10 @@ export function BoardWorkspace({
           <AppIcon icon={IconAiEdit} size="sm" />
           变体
         </button>
+        <button aria-label="生成多角度" onClick={() => generateSelectedImageMultiAngle()} title="生成多角度" type="button">
+          <AppIcon icon={IconAiEdit} size="sm" />
+          多角度
+        </button>
         <button aria-label="导出选中图片" onClick={exportSelectionAsPng} title="导出选中图片" type="button">
           <AppIcon icon={IconDownload} size="sm" />
         </button>
@@ -4720,6 +4841,15 @@ export function BoardWorkspace({
           <button onClick={generateSelectedImageVariant} type="button" role="menuitem">
             生成变体
           </button>
+        ) : null}
+        {isImageObject ? (
+          <>
+            {multiAngleOptions.map((option) => (
+              <button key={option.value} onClick={() => generateSelectedImageMultiAngle(option.value)} type="button" role="menuitem">
+                多角度：{option.label}
+              </button>
+            ))}
+          </>
         ) : null}
         <button onClick={exportSelectionAsPng} type="button" role="menuitem">
           导出 PNG
@@ -4785,6 +4915,12 @@ export function BoardWorkspace({
                   <AppIcon icon={IconAiEdit} size={18} />
                   变体
                 </button>
+                {multiAngleOptions.map((option) => (
+                  <button key={option.value} onClick={() => generateSelectedImageMultiAngle(option.value)} type="button" role="menuitem">
+                    <AppIcon icon={IconAiEdit} size={18} />
+                    多角度：{option.label}
+                  </button>
+                ))}
                 <button
                   onClick={() => {
                     setSelectedImageAsSource();
@@ -5112,6 +5248,17 @@ export function BoardWorkspace({
         >
           <AppIcon icon={IconAiEdit} size={16} />
           局部重绘
+        </button>
+        <button
+          disabled={!selectedImageObject}
+          onClick={() => {
+            openMobileView("edit");
+            generateSelectedImageMultiAngle();
+          }}
+          type="button"
+        >
+          <AppIcon icon={IconAiEdit} size={16} />
+          多角度
         </button>
       </div>
     );
@@ -5448,6 +5595,7 @@ export function BoardWorkspace({
           <button aria-pressed={!maskStrokes.length && currentToolId !== "mask"} onClick={() => setCurrentToolId("select")} type="button">整图</button>
           <button aria-pressed={currentToolId === "mask"} onClick={enterMobileMaskMode} type="button">局部</button>
           <button aria-pressed={false} onClick={generateSelectedImageVariant} type="button">变体</button>
+          <button aria-pressed={false} onClick={() => generateSelectedImageMultiAngle()} type="button">多角度</button>
         </div>
         {sourceAsset ? (
           <div className="mobile-mask-tools">
@@ -5771,7 +5919,7 @@ export function BoardWorkspace({
                   value={selectedReversePromptModel}
                 >
                   {reversePromptModelOptions.map((model) => (
-                    <option key={model.id} value={model.id}>
+                    <option key={getProviderModelOptionValue(model)} value={getProviderModelOptionValue(model)}>
                       {model.label}
                     </option>
                   ))}
@@ -5830,7 +5978,7 @@ export function BoardWorkspace({
             <div className="asset-preview-content prompt-assist-dialog">
               <header>
                 <div>
-                  <strong>辅助提示词</strong>
+                  <strong>{promptAssistSource === "safety" ? "提示词安全优化器" : promptAssistEngine === "skill2" ? "辅助提示词2" : "辅助提示词"}</strong>
                   <span>选择一条应用到 AI 生图提示词</span>
                 </div>
                 <button aria-label="关闭" onClick={() => setIsPromptAssistDialogOpen(false)} type="button">
@@ -5862,11 +6010,11 @@ export function BoardWorkspace({
               <div className="prompt-assist-dialog-actions">
                 <button
                   disabled={isPromptAssistLoading || !sourcePrompt.trim()}
-                  onClick={() => void runPromptAssist()}
+                  onClick={() => void (promptAssistSource === "safety" ? runPromptSafetyOptimizer("strict") : runPromptAssist(promptAssistEngine))}
                   type="button"
                 >
                   {isPromptAssistLoading ? <AppIcon icon={IconLoading} className="spin" size="md" /> : <AppIcon icon={IconAi} size="md" />}
-                  再生成
+                  {promptAssistSource === "safety" ? "严格优化" : "再生成"}
                 </button>
                 <button onClick={() => setIsPromptAssistDialogOpen(false)} type="button">
                   关闭
@@ -5890,22 +6038,23 @@ export function BoardWorkspace({
                 </button>
               </header>
               <div className="result-picker-grid">
-                {resultPickerJob.results.map(({ asset }) => (
+                {resultPickerJob.results.map(({ asset }, index) => (
                   <article className="result-picker-card" key={asset.id}>
-                    <button onClick={() => openAssetPreview(asset)} type="button">
+                    <button className="result-picker-preview" onClick={() => openAssetPreview(asset)} type="button">
                       <img alt="" src={apiUrl(asset.publicUrl)} />
+                      <span>候选 {index + 1}</span>
                     </button>
                     <div className="result-picker-card-actions">
-                      <button onClick={() => void insertAsset(asset)} type="button">载入</button>
-                      <button onClick={() => setAssetAsSource(asset.id)} type="button">源图</button>
-                      <button onClick={() => setAssetAsPrimaryReference(asset.id)} type="button">参考</button>
-                      <button aria-pressed={asset.isFavorite} onClick={() => toggleAssetFavorite(asset)} type="button">
-                        <AppIcon icon={IconStar} size="sm" />
-                      </button>
+                      <button className="result-picker-primary-action" onClick={() => void insertAsset(asset)} type="button">载入</button>
+                      <button onClick={() => setAssetAsSource(asset.id)} type="button">设为源图</button>
+                      <button onClick={() => setAssetAsPrimaryReference(asset.id)} type="button">设为参考</button>
                       {resultPickerSummary.canCompareWithSource ? (
                         <button onClick={() => setResultPickerComparisonAssetId(asset.id)} type="button">对比</button>
                       ) : null}
-                      <button className="asset-delete-button" onClick={() => void deleteAsset(asset)} type="button">
+                      <button aria-label={asset.isFavorite ? "取消收藏" : "收藏"} aria-pressed={asset.isFavorite} onClick={() => toggleAssetFavorite(asset)} type="button">
+                        <AppIcon icon={IconStar} size="sm" />
+                      </button>
+                      <button aria-label="删除候选图" className="asset-delete-button" onClick={() => void deleteAsset(asset)} type="button">
                         <AppIcon icon={IconDelete} size="sm" />
                       </button>
                     </div>
@@ -6027,6 +6176,10 @@ export function BoardWorkspace({
             loading: isMobileSyncing,
           })}
           {renderTopbarAction("导出", IconDownload, () => exportBatchAsPng("page"))}
+          <a className="canvas-home-link topbar-account-link" href="/reverse-prompt" title="打开反推提示词">
+            <AppIcon icon={IconAiEdit} size="md" />
+            反推
+          </a>
           {renderTopbarAction("图层", IconLayers, openLayerPanel)}
           {renderTopbarAction("画板", IconBoards, openBoardDrawer)}
           <a className="canvas-home-link topbar-account-link" href="/" title="返回工作台">
@@ -6171,17 +6324,7 @@ export function BoardWorkspace({
               <div className="creative-field-title">辅助提示词</div>
               {renderPromptAssistControls("desktop-generate")}
             </div>
-            <label className="creative-model-select">
-              <span>模型选择</span>
-              <select onChange={(event) => updateSelectedImageModel(event.target.value)} value={selectedImageModel}>
-                {imageModelOptions.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}
-                  </option>
-                ))}
-              </select>
-              {imageModelStatus ? <em>{imageModelStatus}</em> : null}
-            </label>
+            {renderImageModelSelect("desktop-generate-model")}
             {renderAspectRatioControls()}
             {renderQualityControls()}
             {renderCreativeCountControls()}
@@ -6275,6 +6418,7 @@ export function BoardWorkspace({
               <span>{desktopEditActionMeta.join(" · ")}</span>
             </div>
           ) : null}
+          {renderImageModelSelect("desktop-edit-model")}
           <label className="field-label" htmlFor="desktop-edit-prompt">修改要求</label>
           <div className="prompt-input-shell">
             <textarea
@@ -6301,16 +6445,6 @@ export function BoardWorkspace({
             <summary>高级输出设置</summary>
             {renderAspectRatioControls()}
             {renderQualityControls()}
-            <label className="select-field">
-              替换类型
-              <select onChange={(event) => setReplacementType(event.target.value as ReplacementType)} value={replacementType}>
-                {replacementTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
             {renderCreativeCountControls()}
             {renderPromptRecipePanel("inpaint")}
           </details>
@@ -6386,7 +6520,7 @@ export function BoardWorkspace({
         <div className="canvas-meta">
           <span>{currentPageName}</span>
           <span>{selectionInfo.selectedCount} 个选中 / {selectionInfo.pageShapeCount} 个对象</span>
-          {shouldShowLatestGenerationRecord ? (
+          {shouldShowLatestGenerationRecord && latestGenerationRecord ? (
             <span>{latestGenerationRecord.modeLabel}：{latestGenerationRecord.status}</span>
           ) : null}
           <span>{currentStatusText}</span>
@@ -6494,6 +6628,9 @@ export function BoardWorkspace({
           </button>
           <button disabled={!selectedImageObject} onClick={generateSelectedImageVariant} title="生成变体" type="button">
             变体
+          </button>
+          <button disabled={!selectedImageObject} onClick={() => generateSelectedImageMultiAngle()} title="生成多角度" type="button">
+            多角度
           </button>
           <button disabled={!selectedImageObject} onClick={removeSelectedImageBackground} title="去背景" type="button">
             去背景
@@ -6979,10 +7116,12 @@ function getAppSnapshot(snapshot: unknown): AppSnapshot {
     referenceAssetIdsByRole: getValidReferenceAssetMap(snapshot.app.referenceAssetIdsByRole),
     referenceConflictStrategy: getValidReferenceConflictStrategy(snapshot.app.referenceConflictStrategy),
     referenceItems: getValidReferenceItems(snapshot.app.referenceItems),
-    replacementType: getValidReplacementType(snapshot.app.replacementType),
     reversePromptByAssetId: getValidReversePromptMap(snapshot.app.reversePromptByAssetId),
+    selectedAspectRatio: getBoardAspectRatioSelection(snapshot.app.selectedAspectRatio),
     selectedImageModel: typeof snapshot.app.selectedImageModel === "string" ? snapshot.app.selectedImageModel : "",
-    sourceImageSize: getValidImageSize(snapshot.app.sourceImageSize, DEFAULT_SOURCE_IMAGE_SIZE),
+    sourceImageSize: typeof snapshot.app.sourceImageSize === "string" && isValidImageSize(snapshot.app.sourceImageSize)
+      ? snapshot.app.sourceImageSize
+      : undefined,
     sourceAssetId: typeof snapshot.app.sourceAssetId === "string" ? snapshot.app.sourceAssetId : "",
     sourcePrompt: typeof snapshot.app.sourcePrompt === "string" ? snapshot.app.sourcePrompt : "",
     toolbarOffset: getValidPoint(snapshot.app.toolbarOffset, DEFAULT_TOOLBAR_OFFSET),
@@ -7023,7 +7162,6 @@ function getGenerationJobParams(job: Pick<JobPayload, "paramsJson">): Generation
               ...(isReferenceWeight(item.weight) ? { weight: item.weight } : {}),
             }))
         : undefined,
-      replacementType: typeof parsed.replacementType === "string" ? parsed.replacementType : undefined,
       size: typeof parsed.size === "string" ? parsed.size : undefined,
     };
   } catch {
@@ -7115,18 +7253,18 @@ function getPresetReferenceRole(
 
 function getResolvedReferenceAssets(items: ReferenceItem[], imageAssets: AssetPayload[]): ResolvedReferenceAsset[] {
   return items
-    .map((item, index) => {
+    .flatMap((item, index) => {
       const roleOption = referenceRoleOptions.find((option) => option.value === item.role);
       const asset = imageAssets.find((assetItem) => assetItem.id === item.assetId);
-      return {
+      if (!asset) return [];
+      return [{
         value: `reference-${index + 1}`,
         label: roleOption?.label ?? (index === 0 ? "主参考图" : `参考图 ${index + 1}`),
-        role: item.role,
-        weight: item.weight,
+        ...(item.role ? { role: item.role } : {}),
+        ...(item.weight ? { weight: item.weight } : {}),
         asset,
-      };
-    })
-    .filter((item): item is ResolvedReferenceAsset => Boolean(item.asset));
+      }];
+    });
 }
 
 function getGenerationJobForAsset(jobs: JobPayload[], assetId: string) {
@@ -7167,7 +7305,6 @@ function getCurrentPromptRecipeParamsFromValues(input: {
   model: string;
   preserveStrength: PreserveStrength;
   referenceFit: ReferenceFit;
-  replacementType: ReplacementType;
   size: ImageSize;
 }) {
   return {
@@ -7176,7 +7313,6 @@ function getCurrentPromptRecipeParamsFromValues(input: {
     model: input.model,
     preserveStrength: input.preserveStrength,
     referenceFit: input.referenceFit,
-    replacementType: input.replacementType,
     size: input.size,
   };
 }
@@ -7193,9 +7329,6 @@ function getPromptRecipeParams(value: Record<string, unknown>) {
       : undefined,
     referenceFit: referenceFitOptions.some((option) => option.value === value.referenceFit)
       ? value.referenceFit as ReferenceFit
-      : undefined,
-    replacementType: replacementTypeOptions.some((option) => option.value === value.replacementType)
-      ? value.replacementType as ReplacementType
       : undefined,
     size: typeof value.size === "string" && isValidImageSize(value.size) ? value.size : undefined,
   };
@@ -7256,6 +7389,10 @@ function getAssetTags(asset: AssetPayload) {
   } catch {
     return [];
   }
+}
+
+function getAssetThumbnailUrl(asset: AssetPayload) {
+  return asset.thumbnailUrl ?? asset.publicUrl.replace(/\/file(?:\?.*)?$/, "/thumbnail");
 }
 
 function getAssetPayloadFromMetadataResponse(asset: AssetPayload & { tags?: string[] }) {
@@ -7374,10 +7511,6 @@ function getValidGenerationCount(value: unknown) {
     : DEFAULT_GENERATION_COUNT;
 }
 
-function getValidImageSize(value: unknown, fallback: ImageSize) {
-  return typeof value === "string" && isValidImageSize(value) ? value : fallback;
-}
-
 function getValidMaskBrushRatio(value: unknown) {
   return typeof value === "number" && value >= 0.01 && value <= 0.12
     ? value
@@ -7388,12 +7521,6 @@ function getValidMaskFeatherRatio(value: unknown) {
   return typeof value === "number" && value >= 0 && value <= 0.06
     ? value
     : DEFAULT_MASK_FEATHER_RATIO;
-}
-
-function getValidReplacementType(value: unknown): ReplacementType {
-  return replacementTypeOptions.some((option) => option.value === value)
-    ? (value as ReplacementType)
-    : "product";
 }
 
 function getValidPreserveStrength(value: unknown): PreserveStrength {
@@ -7425,6 +7552,7 @@ function getValidArtStyle(value: unknown): BoardArtStyle {
 }
 
 function getAspectRatioOrientation(value: BoardAspectRatio) {
+  if (value === "auto") return "landscape";
   const [width, height] = value.split(":").map(Number);
   if (width > height) return "landscape";
   if (width < height) return "portrait";
@@ -7500,6 +7628,22 @@ function buildPromptAssistReferenceContext(
       return `参考图 ${index + 1}：${roleLabel}。`;
     })
     .join("\n");
+}
+
+function getPromptSafetyNotes(reasons: string[]) {
+  const labels: Record<string, string> = {
+    added_adult_age_guard: "已补充成年女性年龄约束，降低年龄不明确导致的拒绝风险。",
+    added_body_aesthetic_language: "已用整体体态和自然比例描述替代局部刺激表达。",
+    added_clean_commercial_tone: "已补充干净克制的商业人像表达。",
+    added_safety_constraints: "已加入通用安全约束，减少低俗、幼态、暧昧和过度暴露表达。",
+    added_strict_constraints: "已加入更严格的成年、克制、商业质感约束。",
+    removed_minor_adult_conflict: "已移除未成年/幼态与成人性感表达的冲突。",
+    replaced_body_part_emphasis: "已弱化局部身体强调，改为整体比例和自然体态。",
+    replaced_high_risk_terms: "已替换高风险性感词为更安全的时尚/角色表达。",
+    replaced_revealing_clothing: "已将暴露服装描述改为得体服装和材质描述。",
+    replaced_risky_camera_or_scene: "已替换易触发风险的机位或场景氛围描述。",
+  };
+  return reasons.map((reason) => labels[reason] ?? reason).filter((note) => note.length > 0);
 }
 
 function getValidMaskState(value: unknown): MaskState | null {
@@ -7628,7 +7772,6 @@ function isPositiveDimension(value: number | null | undefined): value is number 
 
 function buildLocalReplacePrompt(
   promptText: string,
-  replacement: (typeof replacementTypeOptions)[number],
   references: Array<{ label: string; asset: AssetPayload; weight?: ReferenceWeight }>,
   preserveStrength: (typeof preserveStrengthOptions)[number],
   referenceFit: (typeof referenceFitOptions)[number],
@@ -7636,9 +7779,7 @@ function buildLocalReplacePrompt(
   hasMask: boolean,
 ) {
   return [
-    hasMask
-      ? replacement.instruction
-      : "Use the first image as the source image. Identify the target object or region from the user's instruction and replace that target with the relevant reference content; do not simply reproduce the source image unchanged.",
+    targetEditInstruction,
     hasMask
       ? preserveStrength.instruction
       : "Preserve the person's identity, pose, hands, body proportions, lighting, camera angle, and background unless the user explicitly asks to change them.",

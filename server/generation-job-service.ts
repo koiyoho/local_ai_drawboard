@@ -8,7 +8,7 @@ import { dimensionsFromSize, isValidImageSize, type ImageSize } from "@/lib/imag
 import { saveGeneratedImageArchive, saveLocalExport } from "@/lib/local-export";
 import { createOpenAIClient, getImageModel } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
-import { normalizeConfiguredModels } from "@/lib/provider-models";
+import { getConfiguredModelError, getEnabledProviderModels, isConfiguredModelEnabled, normalizeConfiguredModels, parseConfiguredModelValue } from "@/lib/provider-models";
 import { isReferenceRole, referenceRoleValues } from "@/lib/reference-roles";
 import { AssetFileMissingError, readBoardAssetBytes, saveLocalAsset } from "@/lib/storage";
 import { getProviderSetting } from "./provider-settings-helper";
@@ -37,7 +37,6 @@ export const imageGenerationInputSchema = z.object({
   prompt: z.string().trim().min(1).max(32000),
   referenceAssetIds: z.array(z.string().min(1)).max(8).default([]),
   referenceItems: z.array(referenceItemSchema).max(8).optional(),
-  replacementType: z.string().trim().max(80).optional(),
   size: z.string().refine(isValidImageSize, "Invalid gpt-image-2 image size").default("1024x1024"),
   sourceAssetId: z.string().optional(),
 });
@@ -65,8 +64,25 @@ export async function createImageGenerationJob(input: CreateGenerationJobInput) 
     return { ok: false as const, error: providerNotConfiguredMessage, statusCode: 400 };
   }
 
-  const model = input.generation.model ?? getImageModel(providerSetting);
-  const modelChannel = resolveImageModelChannel(providerSetting, model);
+  const defaultImageModel = parseConfiguredModelValue(providerSetting.imageModel || getImageModel(providerSetting));
+  const defaultImageModelError = getConfiguredModelError(providerSetting.imageModel || getImageModel(providerSetting), "默认图像模型");
+  if (defaultImageModelError) return { ok: false as const, error: defaultImageModelError, statusCode: 400 };
+  if (!isConfiguredModelEnabled(providerSetting.enabledImageModels, providerSetting.imageModel || getImageModel(providerSetting))) {
+    return { ok: false as const, error: "默认图像模型未启用", statusCode: 400 };
+  }
+  const requestedModel = input.generation.model ? parseConfiguredModelValue(input.generation.model) : null;
+  const requestedModelError = input.generation.model ? getConfiguredModelError(input.generation.model, "所选图像模型") : "";
+  if (requestedModelError) return { ok: false as const, error: requestedModelError, statusCode: 400 };
+  const model = requestedModel?.id ?? defaultImageModel.id;
+  const requestedChannel = requestedModel?.channel;
+  if (requestedModel && !getEnabledProviderModels(providerSetting.enabledImageModels, providerSetting.imageModel || getImageModel(providerSetting)).some((enabledModel) =>
+    enabledModel.id === requestedModel.id &&
+    (!requestedChannel || (enabledModel.channel ?? "provider") === requestedChannel))) {
+    return { ok: false as const, error: "所选图像模型未在后台启用", statusCode: 400 };
+  }
+  const modelChannel = requestedModel
+    ? requestedChannel ?? resolveRequestedImageModelChannel(providerSetting, model)
+    : defaultImageModel.channel ?? resolveImageModelChannel(providerSetting, model);
   let generationProviderSetting: ProviderSetting;
   try {
     generationProviderSetting = await getImageGenerationProviderSetting(providerSetting, model, modelChannel);
@@ -116,7 +132,6 @@ export async function createImageGenerationJob(input: CreateGenerationJobInput) 
     providerRoute: getProviderRoute(modelChannel),
     referenceAssetIds,
     referenceItems,
-    replacementType: input.generation.replacementType,
     ...input.paramsMetadata,
   });
 
@@ -293,9 +308,18 @@ function formatGenerationError(error: unknown, context: { model: string; provide
 }
 
 function resolveImageModelChannel(providerSetting: ProviderSetting, model: string): ImageModelChannel {
-  const configuredModel = normalizeConfiguredModels(providerSetting.enabledImageModels, getImageModel(providerSetting))
-    .find((item) => item.enabled && item.id === model);
+  const defaultModel = parseConfiguredModelValue(providerSetting.imageModel);
+  if (defaultModel.channel && defaultModel.id === model) return defaultModel.channel;
+  return resolveRequestedImageModelChannel(providerSetting, model);
+}
+
+function resolveRequestedImageModelChannel(providerSetting: ProviderSetting, model: string): ImageModelChannel {
+  const configuredModels = normalizeConfiguredModels(providerSetting.enabledImageModels, "");
+  const configuredModel = configuredModels.find((item) => item.enabled && item.id === model && (item.channel ?? "provider") === "provider") ??
+    configuredModels.find((item) => item.enabled && item.id === model);
   if (configuredModel?.channel) return configuredModel.channel;
+  const defaultModel = parseConfiguredModelValue(providerSetting.imageModel);
+  if (defaultModel.channel && defaultModel.id === model) return defaultModel.channel;
   return geminiBridgeImageModels.has(model) ? "gemini-bridge" : "provider";
 }
 

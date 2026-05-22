@@ -12,6 +12,7 @@ import { registerGenerationJobRoutes } from "./routes/generation-jobs";
 import { registerGeminiBridgeRoutes } from "./routes/gemini-bridge";
 import { registerPromptAssistRoutes } from "./routes/prompt-assist";
 import { registerPromptRecipeRoutes } from "./routes/prompt-recipes";
+import { registerPromptSafetyRoutes } from "./routes/prompt-safety";
 import { registerProviderSettingRoutes } from "./routes/provider-settings";
 import { registerStoryboardRoutes } from "./routes/storyboards";
 import { registerSystemRoutes } from "./routes/system";
@@ -55,6 +56,7 @@ export async function createApp() {
   await app.register(registerExportRoutes);
   await app.register(registerGenerationJobRoutes);
   await app.register(registerPromptAssistRoutes);
+  await app.register(registerPromptSafetyRoutes);
   await app.register(registerPromptRecipeRoutes);
   await app.register(registerStoryboardRoutes);
   await registerStaticRoutes(app);

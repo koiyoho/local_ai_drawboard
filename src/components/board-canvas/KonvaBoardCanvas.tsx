@@ -56,7 +56,7 @@ type ObjectLongPressState = {
   id: string;
   point: Point;
   start: Point;
-  timer: ReturnType<typeof window.setTimeout>;
+  timer: number;
 };
 
 const OBJECT_LONG_PRESS_DELAY_MS = 520;

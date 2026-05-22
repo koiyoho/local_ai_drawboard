@@ -4,7 +4,7 @@ import path from "node:path";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
-import { normalizeConfiguredModels } from "@/lib/provider-models";
+import { geminiBridgeImageModels, geminiBridgeTextModels, normalizeConfiguredModels } from "@/lib/provider-models";
 import { requireAdminUser } from "../auth";
 import { jsonError, parseBody } from "../http";
 
@@ -47,11 +47,8 @@ export async function registerGeminiBridgeRoutes(app: FastifyInstance) {
       hasSecure1psid: Boolean(savedAuth.secure1psid || process.env.GEMINI_SECURE_1PSID?.trim() || process.env.__SECURE_1PSID?.trim()),
       hasSecure1psidts: Boolean(savedAuth.secure1psidts || process.env.GEMINI_SECURE_1PSIDTS?.trim() || process.env.__SECURE_1PSIDTS?.trim()),
       imageModel: DEFAULT_MODEL,
-      suggestedImageModels: [
-        { id: "gemini-web", label: "Gemini Web" },
-        { id: "nano-banana", label: "Nano Banana" },
-      ],
-      suggestedTextModels: [{ id: "gemini-web", label: "Gemini Web" }],
+      suggestedImageModels: geminiBridgeImageModels,
+      suggestedTextModels: geminiBridgeTextModels,
       textModel: DEFAULT_MODEL,
     };
   });
@@ -87,13 +84,10 @@ export async function registerGeminiBridgeRoutes(app: FastifyInstance) {
     const bridgePort = parseBridgePort(process.env.GEMINI_BRIDGE_PORT);
     const bridgeBaseUrl = `http://${bridgeHost}:${bridgePort}/v1`;
     const existing = await prisma.providerSetting.findUnique({ where: { userId_provider: { provider, userId: user.id } } });
-    const nextImageModels = normalizeConfiguredModels(existing?.enabledImageModels, existing?.imageModel ?? DEFAULT_MODEL);
-    const nextTextModels = normalizeConfiguredModels(existing?.enabledReversePromptModels, existing?.textModel ?? DEFAULT_MODEL);
-    const imageModels = ensureModels(nextImageModels, [
-      { channel: "gemini-bridge", enabled: true, id: "gemini-web", label: "Gemini Web" },
-      { channel: "gemini-bridge", enabled: true, id: "nano-banana", label: "Nano Banana" },
-    ]);
-    const textModels = ensureModels(nextTextModels, [{ channel: "gemini-bridge", enabled: true, id: "gemini-web", label: "Gemini Web" }]);
+    const nextImageModels = existing ? normalizeConfiguredModels(existing.enabledImageModels, existing.imageModel) : [];
+    const nextTextModels = existing ? normalizeConfiguredModels(existing.enabledReversePromptModels, existing.textModel) : [];
+    const imageModels = ensureModels(nextImageModels, geminiBridgeImageModels.map((model) => ({ ...model, channel: "gemini-bridge", enabled: true })));
+    const textModels = ensureModels(nextTextModels, geminiBridgeTextModels.map((model) => ({ ...model, channel: "gemini-bridge", enabled: true })));
 
     const providerSetting = existing
       ? await prisma.providerSetting.update({
@@ -280,7 +274,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function ensureModels<T extends { channel?: string; enabled: boolean; id: string; label: string }>(existingModels: T[], modelsToAdd: T[]) {
   const next = [...existingModels];
   for (const model of modelsToAdd) {
-    const index = next.findIndex((existing) => existing.id === model.id);
+    const index = next.findIndex((existing) => existing.id === model.id && (existing.channel ?? "provider") === (model.channel ?? "provider"));
     if (index === -1) {
       next.push(model);
     } else {

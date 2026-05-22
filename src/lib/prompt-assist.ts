@@ -1,4 +1,5 @@
 export const promptAssistActions = ["optimize", "expand", "variations", "translate"] as const;
+export const promptAssistEngines = ["standard", "skill2"] as const;
 
 export const promptAssistImageTypes = [
   "auto",
@@ -19,6 +20,7 @@ export const promptAssistImageTypes = [
 ] as const;
 
 export type PromptAssistAction = (typeof promptAssistActions)[number];
+export type PromptAssistEngine = (typeof promptAssistEngines)[number];
 export type PromptAssistImageType = (typeof promptAssistImageTypes)[number];
 
 export type PromptAssistInput = {
@@ -26,6 +28,7 @@ export type PromptAssistInput = {
   artStyle?: string;
   artStyleInstruction?: string;
   artStyleLabel?: string;
+  engine?: PromptAssistEngine;
   imageType: PromptAssistImageType;
   prompt: string;
   referenceContext?: string;
@@ -63,6 +66,11 @@ const imageTypeGuidance: Record<PromptAssistImageType, string> = {
 };
 
 export function buildPromptAssistInstruction(input: PromptAssistInput): string {
+  if (input.engine === "skill2") return buildSkill2PromptAssistInstruction(input);
+  return buildStandardPromptAssistInstruction(input);
+}
+
+function buildStandardPromptAssistInstruction(input: PromptAssistInput): string {
   const originalPrompt = input.prompt.trim();
   const outputShape =
     input.action === "variations"
@@ -99,6 +107,59 @@ export function buildPromptAssistInstruction(input: PromptAssistInput): string {
     "- 对摄影、人物、商品和空间场景，优先补充镜头、光线、材质、比例和真实物理关系。",
     "- 不要输出模板占位符、不要输出未替换的方括号字段。",
     "- 避免解释模型能力、避免输出 Markdown、避免额外寒暄。",
+    input.referenceContext
+      ? ["参考图标记：", "<<<REFERENCE_CONTEXT", input.referenceContext.trim(), "REFERENCE_CONTEXT>>>"].join("\n")
+      : "",
+    "用户原始提示词：",
+    "<<<USER_PROMPT",
+    originalPrompt,
+    "USER_PROMPT>>>",
+    `只输出 JSON，格式为：${outputShape}`,
+  ].join("\n");
+}
+
+function buildSkill2PromptAssistInstruction(input: PromptAssistInput): string {
+  const originalPrompt = input.prompt.trim();
+  const outputShape =
+    input.action === "variations"
+      ? '{"variations":["提示词变体 1","提示词变体 2","提示词变体 3"],"notes":["说明调整依据","可复用变量建议"]}'
+      : '{"prompt":"处理后的完整提示词","notes":["说明调整依据","可复用变量建议"]}';
+
+  return [
+    "你是一名专业的中文 AI 图像提示词工程师，当前模式是“辅助提示词2”。",
+    "方法论：吸收 PromptSkill4image 的需求路由、复杂度分层和变量词库思路，但输出必须适配本项目的 GPT Image 2 / OpenAI-compatible Images API，不输出 Midjourney 参数、Stable Diffusion 标签串或未解释的模型尾缀。",
+    `任务：${actionGuidance[input.action]}`,
+    `图片类型指导：${imageTypeGuidance[input.imageType]}`,
+    "需求路由：",
+    "- 如果输入是短关键词或粗糙想法，先推断图像目标，再补足主体、场景、构图、风格、光线、材质、文字和约束。",
+    "- 如果输入已经是完整提示词，只重组层级、强化可执行细节，不改写核心主体和业务目标。",
+    "- 如果输入像中英混合或翻译需求，保留专有名词，转成自然、具体、模型易理解的中文提示词。",
+    "- 如果输入适合模板复用，在 notes 中给出可替换变量建议，但不要在 prompt 字段里留下占位符。",
+    "复杂度层级：",
+    "- 极简增强版：补齐最少但关键的主体、构图和画质要求，适合快速生成。",
+    "- 平衡增强版：默认采用这一层，加入风格、镜头、光线、材质、色彩、参考图关系和负向约束。",
+    "- 高级结构化版：仅当用户需求复杂、包含商业海报/UI/信息图/多参考图/多主体关系时使用，明确模块、层级和执行规则。",
+    "变量建议：",
+    "- notes 可列出 2-5 个可复用变量，例如主体、场景、风格、光线、色彩、镜头、材质、比例、文字文案。",
+    "- 变量建议必须服务于用户当前提示词，不要泛泛罗列词库。",
+    input.artStyle && input.artStyle !== "auto"
+      ? [
+          `风格锁定：当前画板风格选择为「${input.artStyleLabel || input.artStyle}」。`,
+          input.artStyleInstruction ? `最终生成阶段会统一追加这条画风要求：「${input.artStyleInstruction}」` : "",
+          "不要自行新增、替换或混入其他画风、媒介、流派、艺术家或时代风格；只优化主体、构图、参考图关系、材质、光线、文字和约束。",
+        ].filter(Boolean).join("\n")
+      : "风格处理：可根据图片类型选择一个清晰风格方向，但避免堆叠互相冲突的风格词。",
+    "输出提示词结构建议：",
+    "- 画面目标：最终图像是什么，服务什么用途。",
+    "- 主体与关系：主体数量、外观、动作、身份、产品/角色一致性。",
+    "- 参考图规则：如有参考图，逐一说明每张图约束什么，不要混成一个对象。",
+    "- 构图与视觉层级：画幅、视角、焦点、留白、前中后景、版式模块。",
+    "- 风格、光线、材质、色彩：使用具体可观察描述，不堆空泛形容词。",
+    "- 文字与负向约束：需要文字就给精确文案，不需要文字就明确不要额外文字；列出错字、乱码、结构错误、无关 Logo 等避免项。",
+    "硬性要求：",
+    "- 保留用户原始意图，不擅自替换主体、业务目标或参考图标记。",
+    "- prompt 字段必须是一条可直接使用的完整提示词，不输出 Markdown，不输出解释段落。",
+    "- notes 只写简短依据和变量建议。",
     input.referenceContext
       ? ["参考图标记：", "<<<REFERENCE_CONTEXT", input.referenceContext.trim(), "REFERENCE_CONTEXT>>>"].join("\n")
       : "",

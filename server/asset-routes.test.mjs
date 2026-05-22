@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test, { after, before, beforeEach } from "node:test";
@@ -244,6 +244,14 @@ async function sessionCookieFor(userId) {
   })}`;
 }
 
+function restoreEnv(name, value) {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
 test("PATCH /api/assets/:assetId updates favorite and normalized tags", async () => {
   const app = await createTestApp();
   try {
@@ -267,6 +275,244 @@ test("PATCH /api/assets/:assetId updates favorite and normalized tags", async ()
       const persisted = await prisma.asset.findUniqueOrThrow({ where: { id: asset.id } });
       assert.equal(persisted.isFavorite, true);
       assert.equal(persisted.tagsJson, JSON.stringify(["产品", "bg_1"]));
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test("reverse prompt provider resolution uses configured local model channels", async () => {
+  const previousProxyApiKey = process.env.CODEX_TEXT_PROXY_API_KEY;
+  const previousProxyBaseUrl = process.env.CODEX_TEXT_PROXY_BASE_URL;
+  process.env.CODEX_TEXT_PROXY_API_KEY = "codex-text-proxy-secret";
+  process.env.CODEX_TEXT_PROXY_BASE_URL = "http://127.0.0.1:8081/v1";
+
+  try {
+    const {
+      getReversePromptProviderSetting,
+      resolveReversePromptModelChannel,
+    } = await import(new URL("../dist/server/server/routes/assets.js", import.meta.url));
+    const providerSetting = {
+      apiKey: "third-party-secret",
+      baseUrl: "https://example.test/v1",
+      displayName: "OpenAI 兼容接口",
+      enabledReversePromptModels: JSON.stringify([
+        { channel: "codex", enabled: true, id: "gpt-5.4-mini", label: "GPT 5.4 Mini" },
+      ]),
+      imageModel: "gpt-image-2",
+      textModel: "gpt-5.5",
+    };
+
+    const channel = resolveReversePromptModelChannel(providerSetting, "gpt-5.4-mini");
+    const resolved = await getReversePromptProviderSetting(providerSetting, "gpt-5.4-mini", channel);
+
+    assert.equal(channel, "codex");
+    assert.equal(resolved.displayName, "官方 Codex 文本代理");
+    assert.equal(resolved.baseUrl, "http://127.0.0.1:8081/v1");
+    assert.equal(resolved.apiKey, "codex-text-proxy-secret");
+    assert.equal(resolved.textModel, "gpt-5.4-mini");
+  } finally {
+    restoreEnv("CODEX_TEXT_PROXY_API_KEY", previousProxyApiKey);
+    restoreEnv("CODEX_TEXT_PROXY_BASE_URL", previousProxyBaseUrl);
+  }
+});
+
+test("reverse prompt provider resolution honors explicit provider defaults with duplicate ids", async () => {
+  const {
+    getReversePromptProviderSetting,
+    resolveReversePromptModelChannel,
+  } = await import(new URL("../dist/server/server/routes/assets.js", import.meta.url));
+  const providerSetting = {
+    apiKey: "third-party-secret",
+    baseUrl: "https://example.test/v1",
+    displayName: "OpenAI 兼容接口",
+    enabledReversePromptModels: JSON.stringify([
+      { channel: "codex", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Codex" },
+      { channel: "provider", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Provider" },
+    ]),
+    imageModel: "gpt-image-2",
+    textModel: "provider:gpt-5.5",
+  };
+
+  const channel = resolveReversePromptModelChannel(providerSetting, "gpt-5.5");
+  const resolved = await getReversePromptProviderSetting(providerSetting, "gpt-5.5", channel);
+
+  assert.equal(channel, "provider");
+  assert.equal(resolved.displayName, "OpenAI 兼容接口");
+  assert.equal(resolved.baseUrl, "https://example.test/v1");
+  assert.equal(resolved.apiKey, "third-party-secret");
+  assert.equal(resolved.textModel, "gpt-5.5");
+});
+
+test("reverse prompt provider resolution accepts channel-qualified defaults when the text model pool is empty", async () => {
+  const previousProxyApiKey = process.env.CODEX_TEXT_PROXY_API_KEY;
+  const previousProxyBaseUrl = process.env.CODEX_TEXT_PROXY_BASE_URL;
+  process.env.CODEX_TEXT_PROXY_API_KEY = "codex-text-proxy-secret";
+  process.env.CODEX_TEXT_PROXY_BASE_URL = "http://127.0.0.1:8086/v1";
+
+  try {
+    const {
+      getReversePromptProviderSetting,
+      resolveReversePromptModelChannel,
+    } = await import(new URL("../dist/server/server/routes/assets.js", import.meta.url));
+    const providerSetting = {
+      apiKey: "third-party-secret",
+      baseUrl: "https://example.test/v1",
+      displayName: "OpenAI 兼容接口",
+      enabledReversePromptModels: null,
+      imageModel: "gpt-image-2",
+      textModel: "codex:gpt-5.5",
+    };
+
+    const channel = resolveReversePromptModelChannel(providerSetting, "gpt-5.5");
+    const resolved = await getReversePromptProviderSetting(providerSetting, "gpt-5.5", channel);
+
+    assert.equal(channel, "codex");
+    assert.equal(resolved.displayName, "官方 Codex 文本代理");
+    assert.equal(resolved.baseUrl, "http://127.0.0.1:8086/v1");
+    assert.equal(resolved.apiKey, "codex-text-proxy-secret");
+    assert.equal(resolved.textModel, "gpt-5.5");
+  } finally {
+    restoreEnv("CODEX_TEXT_PROXY_API_KEY", previousProxyApiKey);
+    restoreEnv("CODEX_TEXT_PROXY_BASE_URL", previousProxyBaseUrl);
+  }
+});
+
+test("reverse prompt requested model resolution keeps legacy unqualified requests on provider when the duplicate default is Codex", async () => {
+  const {
+    getReversePromptProviderSetting,
+    resolveReversePromptRequestedModelChannel,
+  } = await import(new URL("../dist/server/server/routes/assets.js", import.meta.url));
+  const providerSetting = {
+    apiKey: "third-party-secret",
+    baseUrl: "https://example.test/v1",
+    displayName: "OpenAI 兼容接口",
+    enabledReversePromptModels: JSON.stringify([
+      { channel: "provider", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Provider" },
+      { channel: "codex", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · Codex" },
+    ]),
+    imageModel: "gpt-image-2",
+    textModel: "codex:gpt-5.5",
+  };
+
+  const channel = resolveReversePromptRequestedModelChannel(providerSetting, "gpt-5.5");
+  const resolved = await getReversePromptProviderSetting(providerSetting, "gpt-5.5", channel);
+
+  assert.equal(channel, "provider");
+  assert.equal(resolved.displayName, "OpenAI 兼容接口");
+  assert.equal(resolved.baseUrl, "https://example.test/v1");
+  assert.equal(resolved.apiKey, "third-party-secret");
+  assert.equal(resolved.textModel, "gpt-5.5");
+});
+
+test("reverse prompt requested model resolution keeps legacy unqualified requests on a channel-qualified default when the text model pool is empty", async () => {
+  const previousProxyApiKey = process.env.CODEX_TEXT_PROXY_API_KEY;
+  const previousProxyBaseUrl = process.env.CODEX_TEXT_PROXY_BASE_URL;
+  process.env.CODEX_TEXT_PROXY_API_KEY = "codex-text-proxy-secret";
+  process.env.CODEX_TEXT_PROXY_BASE_URL = "http://127.0.0.1:8089/v1";
+
+  try {
+    const {
+      getReversePromptProviderSetting,
+      resolveReversePromptRequestedModelChannel,
+    } = await import(new URL("../dist/server/server/routes/assets.js", import.meta.url));
+    const providerSetting = {
+      apiKey: "third-party-secret",
+      baseUrl: "https://example.test/v1",
+      displayName: "OpenAI 兼容接口",
+      enabledReversePromptModels: null,
+      imageModel: "gpt-image-2",
+      textModel: "codex:gpt-5.5",
+    };
+
+    const channel = resolveReversePromptRequestedModelChannel(providerSetting, "gpt-5.5");
+    const resolved = await getReversePromptProviderSetting(providerSetting, "gpt-5.5", channel);
+
+    assert.equal(channel, "codex");
+    assert.equal(resolved.displayName, "官方 Codex 文本代理");
+    assert.equal(resolved.baseUrl, "http://127.0.0.1:8089/v1");
+    assert.equal(resolved.apiKey, "codex-text-proxy-secret");
+    assert.equal(resolved.textModel, "gpt-5.5");
+  } finally {
+    restoreEnv("CODEX_TEXT_PROXY_API_KEY", previousProxyApiKey);
+    restoreEnv("CODEX_TEXT_PROXY_BASE_URL", previousProxyBaseUrl);
+  }
+});
+
+test("style reverse prompt mode formats visible image details for editing", async () => {
+  const { buildReversePromptUserInstruction } = await import(new URL("../dist/server/server/routes/assets.js", import.meta.url));
+  const fullInstruction = buildReversePromptUserInstruction({
+    analysisMode: "full",
+    format: "natural",
+    language: "zh",
+    maxLength: "long",
+    mode: "preset",
+  });
+  const styleInstruction = buildReversePromptUserInstruction({
+    analysisMode: "style",
+    format: "json",
+    language: "zh",
+    maxLength: "long",
+    mode: "preset",
+  });
+
+  assert.match(styleInstruction, /模板体系标准/);
+  assert.match(styleInstruction, /当前图片的具体观察结果/);
+  assert.match(styleInstruction, /图像定位/);
+  assert.match(styleInstruction, /主体细节/);
+  assert.match(styleInstruction, /机位与角度/);
+  assert.match(styleInstruction, /负向约束/);
+  assert.match(styleInstruction, /\[方括号变量\]/);
+  assert.doesNotMatch(fullInstruction, /模板体系标准/);
+  assert.notEqual(styleInstruction, fullInstruction);
+});
+
+test("reverse prompt error formatter explains model/backend 404 failures", async () => {
+  const { formatReversePromptError } = await import(new URL("../dist/server/server/routes/assets.js", import.meta.url));
+  const message = formatReversePromptError(new Error("Not found"), {
+    model: "gpt-5.4-mini",
+    providerDisplayName: "OpenAI 兼容接口",
+    route: "provider-setting",
+  });
+
+  assert.match(message, /gpt-5\.4-mini/);
+  assert.match(message, /OpenAI 兼容接口/);
+  assert.match(message, /本地模型通道/);
+  assert.notEqual(message, "Not found");
+});
+
+test("GET /api/assets/:assetId/thumbnail returns a cached webp thumbnail", async () => {
+  const app = await createTestApp();
+  try {
+    await withTestAsset(prisma, async ({ asset, board, user }) => {
+      const assetPath = path.join(process.cwd(), "public", asset.storageKey);
+      await mkdir(path.dirname(assetPath), { recursive: true });
+      await writeFile(assetPath, Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+        "base64",
+      ));
+      await prisma.asset.update({
+        data: {
+          boardId: board.id,
+          height: 1,
+          mimeType: "image/png",
+          sizeBytes: 70,
+          width: 1,
+        },
+        where: { id: asset.id },
+      });
+      const cookie = await sessionCookieFor(user.id);
+
+      const response = await app.inject({
+        headers: { cookie },
+        method: "GET",
+        url: `/api/assets/${asset.id}/thumbnail`,
+      });
+
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.headers["content-type"], "image/webp");
+      assert.match(String(response.headers["cache-control"]), /max-age=604800/);
+      assert.ok(response.rawPayload.byteLength > 0);
     });
   } finally {
     await app.close();
@@ -330,6 +576,7 @@ test("GET /api/boards/:boardId/assets paginates beyond 50 assets until exhausted
     assert.equal(firstBody.totalMatching, 55);
     assert.equal(typeof firstBody.nextCursor, "string");
     assert.deepEqual(firstBody.assets.map((asset) => asset.kind).slice(0, 3), ["upload", "upload", "upload"]);
+    assert.match(firstBody.assets[0].thumbnailUrl, /^\/api\/assets\/.+\/thumbnail$/);
     assert.ok(new Date(firstBody.assets[0].createdAt) > new Date(firstBody.assets[1].createdAt));
 
     const secondResponse = await app.inject({

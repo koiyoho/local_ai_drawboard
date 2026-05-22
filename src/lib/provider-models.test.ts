@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 
 import {
+  encodeConfiguredModelValue,
   filterImageModelOptions,
+  getDefaultProviderModelSelection,
   getEnabledProviderModels,
+  getProviderModelOptionValue,
   normalizeConfiguredModels,
+  normalizeProviderModelSelection,
+  parseConfiguredModelValue,
 } from "./provider-models";
 
 assert.deepEqual(filterImageModelOptions(
@@ -41,10 +46,36 @@ assert.deepEqual(normalizeConfiguredModels([
   { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image · Codex" },
 ], "gpt-image-2"), [
   { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image · Third Party" },
+  { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image · Codex" },
 ]);
+
+assert.deepEqual(getEnabledProviderModels([
+  { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image · Third Party" },
+  { channel: "codex", enabled: true, id: "gpt-image-2", label: "GPT Image · Codex" },
+], "gpt-image-2"), [
+  { channel: "provider", id: "gpt-image-2", label: "GPT Image · Third Party" },
+  { channel: "codex", id: "gpt-image-2", label: "GPT Image · Codex" },
+]);
+
+assert.equal(encodeConfiguredModelValue({ channel: "codex", id: "gpt-image-2" }), "codex:gpt-image-2");
+assert.deepEqual(parseConfiguredModelValue("gemini-bridge:gemini-web"), {
+  channel: "gemini-bridge",
+  id: "gemini-web",
+});
+assert.deepEqual(parseConfiguredModelValue("legacy-model"), {
+  channel: undefined,
+  id: "legacy-model",
+});
 
 assert.deepEqual(normalizeConfiguredModels("not-json", "gpt-image-2"), [
   { channel: "provider", enabled: true, id: "gpt-image-2", label: "gpt-image-2" },
+]);
+
+assert.deepEqual(normalizeConfiguredModels([
+  { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image · Third Party" },
+], "codex:gpt-image-2"), [
+  { channel: "codex", enabled: true, id: "gpt-image-2", label: "gpt-image-2" },
+  { channel: "provider", enabled: true, id: "gpt-image-2", label: "GPT Image · Third Party" },
 ]);
 
 assert.deepEqual(getEnabledProviderModels([
@@ -53,3 +84,15 @@ assert.deepEqual(getEnabledProviderModels([
 ], "gpt-image-2"), [
   { id: "imagen-4", label: "imagen-4" },
 ]);
+
+const duplicateModelOptions = [
+  { channel: "codex" as const, id: "gpt-image-2", label: "GPT Image · Codex" },
+  { channel: "provider" as const, id: "gpt-image-2", label: "GPT Image · Third Party" },
+  { channel: "gemini-bridge" as const, id: "nano-banana", label: "Nano Banana" },
+];
+
+assert.equal(getProviderModelOptionValue(duplicateModelOptions[0]), "codex:gpt-image-2");
+assert.equal(normalizeProviderModelSelection(duplicateModelOptions, "gpt-image-2"), "provider:gpt-image-2");
+assert.equal(normalizeProviderModelSelection(duplicateModelOptions, "codex:gpt-image-2"), "codex:gpt-image-2");
+assert.equal(getDefaultProviderModelSelection(duplicateModelOptions, "gpt-image-2"), "provider:gpt-image-2");
+assert.equal(getDefaultProviderModelSelection(duplicateModelOptions, "codex:gpt-image-2"), "codex:gpt-image-2");
