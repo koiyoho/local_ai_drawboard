@@ -1,7 +1,14 @@
 import type { ProviderSetting } from "@/generated/prisma/client";
 import { createOpenAIClient, getTextModel } from "@/lib/openai";
 import { getConfiguredModelError, isConfiguredModelEnabled, normalizeConfiguredModels, parseConfiguredModelValue, type ProviderModelChannel } from "@/lib/provider-models";
+import { createCliProxyProviderSetting } from "./lib/cliproxy";
 import { readCodexApiKey } from "./lib/codex-oauth";
+
+type TextProviderSetting = Pick<ProviderSetting, "apiKey" | "baseUrl" | "displayName" | "enabledReversePromptModels" | "textModel"> & {
+  cliProxyApiKey?: string | null;
+  cliProxyBaseUrl?: string | null;
+  cliProxyManagementKey?: string | null;
+};
 
 const geminiBridgeTextModels = new Set([
   "gemini-web",
@@ -34,12 +41,13 @@ export function resolveRequestedTextModelChannel(
   return geminiBridgeTextModels.has(model) ? "gemini-bridge" : "provider";
 }
 
-export async function getTextGenerationProviderSetting<T extends ProviderSetting | Pick<ProviderSetting, "apiKey" | "baseUrl" | "displayName" | "enabledReversePromptModels" | "textModel">>(
+export async function getTextGenerationProviderSetting<T extends ProviderSetting | TextProviderSetting>(
   providerSetting: T,
   model: string,
   modelChannel: ProviderModelChannel,
 ): Promise<T> {
   if (modelChannel === "provider") return { ...providerSetting, textModel: model };
+  if (modelChannel === "cliproxy") return createCliProxyProviderSetting(providerSetting, model);
   if (modelChannel === "codex") {
     const proxyBaseUrl = process.env.CODEX_TEXT_PROXY_BASE_URL?.trim();
     const proxyApiKey = process.env.CODEX_TEXT_PROXY_API_KEY?.trim() || "codex-text-proxy";

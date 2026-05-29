@@ -79,4 +79,4 @@ curl -fsSL https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/ins
 - 生图 / 改图模型
 - 反推 / 提示词模型
 
-本地启动会使用单用户模式，并跳过登录页。
+本地启动会使用单用户模式，画板、素材、配置和生成文件都保存在你自己的电脑上。

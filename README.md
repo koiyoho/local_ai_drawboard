@@ -81,4 +81,4 @@ Open the app, go to **Local Settings**, and configure an OpenAI-compatible provi
 - image model
 - text model
 
-Local startup uses single-user mode and skips the login page.
+Local startup uses single-user mode and keeps boards, assets, settings, and generated files on your own computer.

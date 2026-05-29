@@ -90,6 +90,29 @@ test("getTextGenerationProviderSetting uses configured Codex text proxy without 
   }
 });
 
+test("getTextGenerationProviderSetting routes CLIProxyAPI text models through CLIProxyAPI credentials", async () => {
+  const { getTextGenerationProviderSetting } = await import(moduleUrl);
+  const providerSetting = {
+    apiKey: "provider-key",
+    baseUrl: "https://provider.example/v1",
+    cliProxyApiKey: "cliproxy-key",
+    cliProxyBaseUrl: "http://127.0.0.1:8327/v1",
+    cliProxyManagementKey: "management-key",
+    displayName: "Provider",
+    enabledReversePromptModels: JSON.stringify([
+      { channel: "cliproxy", enabled: true, id: "gpt-5.5", label: "GPT 5.5 · CLIProxyAPI" },
+    ]),
+    textModel: "cliproxy:gpt-5.5",
+  };
+
+  const routed = await getTextGenerationProviderSetting(providerSetting, "gpt-5.5", "cliproxy");
+
+  assert.equal(routed.apiKey, "cliproxy-key");
+  assert.equal(routed.baseUrl, "http://127.0.0.1:8327/v1");
+  assert.equal(routed.displayName, "CLIProxyAPI");
+  assert.equal(routed.textModel, "gpt-5.5");
+});
+
 test("callOpenAICompatibleTextModel rejects a disabled default text model before routing", async () => {
   const { callOpenAICompatibleTextModel } = await import(moduleUrl);
   await assert.rejects(
