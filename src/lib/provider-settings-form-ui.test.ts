@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync("src/components/ProviderSettingsForm.tsx", "utf8");
+const adminAppSource = readFileSync("src/client/pages/AdminApp.tsx", "utf8");
 
 test("provider model pool owns its model catalog state when expanded", () => {
   const poolStart = source.indexOf("export function ProviderModelPoolSettings");
@@ -24,4 +25,22 @@ test("provider model pool keeps channel-qualified defaults and custom model inpu
   assert.match(source, /getProviderModelOptionValue\(configuredModel\)/);
   assert.match(source, /placeholder="输入自定义模型 ID"/);
   assert.match(source, /onChange=\{\(event\) => updateModel\(index, \{ id: event\.target\.value/);
+});
+
+test("admin console exposes CLIProxyAPI management, official OAuth login, and Grok CLI guidance", () => {
+  assert.match(source, /export function CliProxySettingsCard/);
+  assert.match(source, /CLIProxyAPI 管理密钥/);
+  assert.match(source, /hasCliProxyManagementKey/);
+  assert.match(source, /cliProxyEnvironmentHasManagementKey/);
+  assert.doesNotMatch(source, /provider: "xai"/);
+  assert.match(source, /Grok \/ xAI/);
+  assert.match(source, /\.\/cli-proxy-api --xai-login/);
+  assert.match(source, /provider: "anthropic"/);
+  assert.match(source, /Claude Code/);
+  assert.match(source, /apiFetch\(`\/api\/provider-settings\/cliproxy\/oauth\/\$\{providerName\}\/start`/);
+  assert.match(source, /apiFetch\(`\/api\/provider-settings\/cliproxy\/oauth\/\$\{providerName\}\/status\?state=/);
+  assert.match(source, /window\.open\(payload\.url, "_blank", "noopener,noreferrer"\)/);
+  assert.match(source, /beginCliProxyOAuthPolling/);
+  assert.match(adminAppSource, /CliProxySettingsCard/);
+  assert.match(adminAppSource, /"\/api\/provider-settings\/cliproxy"/);
 });

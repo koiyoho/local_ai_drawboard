@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { formatUpdateError, isTerminalUpdateJobStatus, shouldSurfaceUpdatePollingError } from "./system-update-ui";
+
+const systemUpdatePanelSource = readFileSync("src/components/SystemUpdatePanel.tsx", "utf8");
 
 test("isTerminalUpdateJobStatus recognizes finished update jobs", () => {
   assert.equal(isTerminalUpdateJobStatus("completed"), true);
@@ -38,4 +41,10 @@ test("formatUpdateError explains active update jobs in local wording", () => {
   );
   assert.equal(formatUpdateError(new Error("custom error"), "fallback"), "custom error");
   assert.equal(formatUpdateError(null, "fallback"), "fallback");
+});
+
+test("system update panel can reapply the current release package", () => {
+  assert.match(systemUpdatePanelSource, /canReapplyCurrent/);
+  assert.match(systemUpdatePanelSource, /重新应用当前发布包/);
+  assert.match(systemUpdatePanelSource, /forceReapply:\s*true/);
 });

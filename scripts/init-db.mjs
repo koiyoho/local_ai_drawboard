@@ -174,10 +174,15 @@ CREATE TABLE IF NOT EXISTS "ProviderSetting" (
   "displayName" TEXT NOT NULL,
   "apiKey" TEXT NOT NULL,
   "baseUrl" TEXT,
+  "cliProxyApiKey" TEXT,
+  "cliProxyManagementKey" TEXT,
+  "cliProxyBaseUrl" TEXT,
   "imageModel" TEXT NOT NULL,
   "textModel" TEXT NOT NULL DEFAULT 'gpt-5.5',
+  "videoModel" TEXT,
   "enabledImageModels" TEXT,
   "enabledReversePromptModels" TEXT,
+  "enabledVideoModels" TEXT,
   "enabled" BOOLEAN NOT NULL DEFAULT true,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -191,10 +196,15 @@ CREATE TABLE IF NOT EXISTS "ProviderSettingHistory" (
   "displayName" TEXT NOT NULL,
   "apiKey" TEXT NOT NULL,
   "baseUrl" TEXT,
+  "cliProxyApiKey" TEXT,
+  "cliProxyManagementKey" TEXT,
+  "cliProxyBaseUrl" TEXT,
   "imageModel" TEXT NOT NULL,
   "textModel" TEXT NOT NULL DEFAULT 'gpt-5.5',
+  "videoModel" TEXT,
   "enabledImageModels" TEXT,
   "enabledReversePromptModels" TEXT,
+  "enabledVideoModels" TEXT,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "ProviderSettingHistory_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
@@ -297,6 +307,11 @@ const providerSettingColumns = db.prepare(`PRAGMA table_info("ProviderSetting")`
 const hasTextModel = providerSettingColumns.some((column) => column.name === "textModel");
 const hasEnabledImageModels = providerSettingColumns.some((column) => column.name === "enabledImageModels");
 const hasEnabledReversePromptModels = providerSettingColumns.some((column) => column.name === "enabledReversePromptModels");
+const hasVideoModel = providerSettingColumns.some((column) => column.name === "videoModel");
+const hasEnabledVideoModels = providerSettingColumns.some((column) => column.name === "enabledVideoModels");
+const hasCliProxyApiKey = providerSettingColumns.some((column) => column.name === "cliProxyApiKey");
+const hasCliProxyManagementKey = providerSettingColumns.some((column) => column.name === "cliProxyManagementKey");
+const hasCliProxyBaseUrl = providerSettingColumns.some((column) => column.name === "cliProxyBaseUrl");
 if (!hasTextModel) {
   db.exec(`ALTER TABLE "ProviderSetting" ADD COLUMN "textModel" TEXT NOT NULL DEFAULT 'gpt-5.5';`);
 }
@@ -305,6 +320,21 @@ if (!hasEnabledImageModels) {
 }
 if (!hasEnabledReversePromptModels) {
   db.exec(`ALTER TABLE "ProviderSetting" ADD COLUMN "enabledReversePromptModels" TEXT;`);
+}
+if (!hasVideoModel) {
+  db.exec(`ALTER TABLE "ProviderSetting" ADD COLUMN "videoModel" TEXT;`);
+}
+if (!hasEnabledVideoModels) {
+  db.exec(`ALTER TABLE "ProviderSetting" ADD COLUMN "enabledVideoModels" TEXT;`);
+}
+if (!hasCliProxyApiKey) {
+  db.exec(`ALTER TABLE "ProviderSetting" ADD COLUMN "cliProxyApiKey" TEXT;`);
+}
+if (!hasCliProxyManagementKey) {
+  db.exec(`ALTER TABLE "ProviderSetting" ADD COLUMN "cliProxyManagementKey" TEXT;`);
+}
+if (!hasCliProxyBaseUrl) {
+  db.exec(`ALTER TABLE "ProviderSetting" ADD COLUMN "cliProxyBaseUrl" TEXT;`);
 }
 
 db.exec(`
@@ -315,10 +345,15 @@ CREATE TABLE IF NOT EXISTS "ProviderSettingHistory" (
   "displayName" TEXT NOT NULL,
   "apiKey" TEXT NOT NULL,
   "baseUrl" TEXT,
+  "cliProxyApiKey" TEXT,
+  "cliProxyManagementKey" TEXT,
+  "cliProxyBaseUrl" TEXT,
   "imageModel" TEXT NOT NULL,
   "textModel" TEXT NOT NULL DEFAULT 'gpt-5.5',
+  "videoModel" TEXT,
   "enabledImageModels" TEXT,
   "enabledReversePromptModels" TEXT,
+  "enabledVideoModels" TEXT,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "ProviderSettingHistory_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
@@ -330,11 +365,31 @@ CREATE INDEX IF NOT EXISTS "ProviderSettingHistory_userId_provider_idx" ON "Prov
 const providerSettingHistoryColumns = db.prepare(`PRAGMA table_info("ProviderSettingHistory")`).all();
 const historyHasEnabledImageModels = providerSettingHistoryColumns.some((column) => column.name === "enabledImageModels");
 const historyHasEnabledReversePromptModels = providerSettingHistoryColumns.some((column) => column.name === "enabledReversePromptModels");
+const hasHistoryVideoModel = providerSettingHistoryColumns.some((column) => column.name === "videoModel");
+const hasHistoryEnabledVideoModels = providerSettingHistoryColumns.some((column) => column.name === "enabledVideoModels");
+const hasHistoryCliProxyApiKey = providerSettingHistoryColumns.some((column) => column.name === "cliProxyApiKey");
+const hasHistoryCliProxyManagementKey = providerSettingHistoryColumns.some((column) => column.name === "cliProxyManagementKey");
+const hasHistoryCliProxyBaseUrl = providerSettingHistoryColumns.some((column) => column.name === "cliProxyBaseUrl");
 if (!historyHasEnabledImageModels) {
   db.exec(`ALTER TABLE "ProviderSettingHistory" ADD COLUMN "enabledImageModels" TEXT;`);
 }
 if (!historyHasEnabledReversePromptModels) {
   db.exec(`ALTER TABLE "ProviderSettingHistory" ADD COLUMN "enabledReversePromptModels" TEXT;`);
+}
+if (!hasHistoryVideoModel) {
+  db.exec(`ALTER TABLE "ProviderSettingHistory" ADD COLUMN "videoModel" TEXT;`);
+}
+if (!hasHistoryEnabledVideoModels) {
+  db.exec(`ALTER TABLE "ProviderSettingHistory" ADD COLUMN "enabledVideoModels" TEXT;`);
+}
+if (!hasHistoryCliProxyApiKey) {
+  db.exec(`ALTER TABLE "ProviderSettingHistory" ADD COLUMN "cliProxyApiKey" TEXT;`);
+}
+if (!hasHistoryCliProxyManagementKey) {
+  db.exec(`ALTER TABLE "ProviderSettingHistory" ADD COLUMN "cliProxyManagementKey" TEXT;`);
+}
+if (!hasHistoryCliProxyBaseUrl) {
+  db.exec(`ALTER TABLE "ProviderSettingHistory" ADD COLUMN "cliProxyBaseUrl" TEXT;`);
 }
 
 const boardSnapshotColumns = db.prepare(`PRAGMA table_info("BoardSnapshot")`).all();

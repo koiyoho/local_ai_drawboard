@@ -12,8 +12,8 @@ export function getResultPickerSummary(job: ResultPickerJob, assets: AssetPayloa
   const sourceAsset = getJobSourceAsset(job, assets);
   return {
     candidateCount: job.results.length,
-    canCompareWithSource: Boolean(sourceAsset && job.mode !== "text_to_image"),
-    modeLabel: job.mode === "text_to_image" ? "AI 生图" : "AI 改图",
+    canCompareWithSource: Boolean(sourceAsset && job.mode === "inpaint"),
+    modeLabel: getResultPickerModeLabel(job.mode),
     sourceAsset,
   };
 }
@@ -24,11 +24,17 @@ export function getResultPickerComparisonPair(
   assets: AssetPayload[],
 ) {
   const sourceAsset = getJobSourceAsset(job, assets);
-  if (!sourceAsset || job.mode === "text_to_image") return null;
+  if (!sourceAsset || job.mode !== "inpaint") return null;
   return {
     resultAsset,
     sourceAsset,
   };
+}
+
+function getResultPickerModeLabel(mode: string) {
+  if (mode === "text_to_image") return "AI 生图";
+  if (mode === "text_to_video") return "AI 视频";
+  return "AI 改图";
 }
 
 function getJobSourceAsset(job: ResultPickerJob, assets: AssetPayload[]) {

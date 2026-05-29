@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -125,6 +125,37 @@ test("applyUpdate blocks confirmedVersion mismatch", async () => {
   }
 });
 
+test("applyUpdate can reapply the current manifest when explicitly requested", async () => {
+  process.env.UPDATE_MANIFEST_URL = "https://github.com/org/repo/releases/latest/download/manifest.json";
+  process.env.UPDATE_DISABLE_UPDATER_START = "1";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({
+    channel: "local",
+    commit: "abc123",
+    migrationMode: "none",
+    packageUrl: "https://github.com/org/repo/releases/download/v1/aiboard.tar.gz",
+    sha256: "c".repeat(64),
+    version: packageJson.version,
+  });
+  try {
+    await assert.rejects(
+      () => applyUpdate({ confirmedVersion: packageJson.version }),
+      /No update is available/,
+    );
+
+    const { jobId } = await applyUpdate({ confirmedVersion: packageJson.version, forceReapply: true });
+    const job = await getUpdateJob(jobId);
+    assert.equal(job.fromVersion, packageJson.version);
+    assert.equal(job.toVersion, packageJson.version);
+    assert.equal(job.status, "queued");
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.UPDATE_MANIFEST_URL;
+    delete process.env.UPDATE_DISABLE_UPDATER_START;
+    await rm(new URL("../tmp/updates", import.meta.url), { force: true, recursive: true });
+  }
+});
+
 test("applyUpdate creates a handoff job without starting updater when disabled", async () => {
   process.env.UPDATE_MANIFEST_URL = "https://github.com/org/repo/releases/latest/download/manifest.json";
   process.env.UPDATE_DISABLE_UPDATER_START = "1";
@@ -150,6 +181,69 @@ test("applyUpdate creates a handoff job without starting updater when disabled",
     delete process.env.UPDATE_MANIFEST_URL;
     delete process.env.UPDATE_DISABLE_UPDATER_START;
     await rm(new URL("../tmp/updates", import.meta.url), { force: true, recursive: true });
+  }
+});
+
+test("getUpdateJob marks non-terminal jobs completed when the target version is running", async () => {
+  const updatesDir = new URL("../tmp/updates/", import.meta.url);
+  const jobsDir = new URL("jobs/", updatesDir);
+  const jobId = "update-20260101000000-reconciled";
+  const now = new Date().toISOString();
+  const job = {
+    channel: "local",
+    fromVersion: "0.0.1",
+    id: jobId,
+    lockExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    message: "Installing release package",
+    rollbackStatus: "not_needed",
+    startedAt: now,
+    status: "installing",
+    step: "install",
+    toVersion: packageJson.version,
+    updatedAt: now,
+    updaterPid: process.pid,
+  };
+  await mkdir(jobsDir, { recursive: true });
+  await writeFile(new URL(`${jobId}.json`, jobsDir), `${JSON.stringify(job, null, 2)}\n`);
+  try {
+    const reconciled = await getUpdateJob(jobId);
+    assert.equal(reconciled.status, "completed");
+    assert.equal(reconciled.step, "completed");
+    assert.equal(reconciled.message, "Update completed; running version confirmed");
+    const persisted = JSON.parse(await readFile(new URL(`${jobId}.json`, jobsDir), "utf8"));
+    assert.equal(persisted.status, "completed");
+  } finally {
+    await rm(updatesDir, { force: true, recursive: true });
+  }
+});
+
+test("getUpdateJob does not auto-complete same-version reapply jobs", async () => {
+  const updatesDir = new URL("../tmp/updates/", import.meta.url);
+  const jobsDir = new URL("jobs/", updatesDir);
+  const jobId = "update-20260101000000-reapply";
+  const now = new Date().toISOString();
+  const job = {
+    channel: "local",
+    fromVersion: packageJson.version,
+    id: jobId,
+    lockExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    message: "Update handoff started",
+    rollbackStatus: "not_needed",
+    startedAt: now,
+    status: "queued",
+    step: "handoff",
+    toVersion: packageJson.version,
+    updatedAt: now,
+    updaterPid: process.pid,
+  };
+  await mkdir(jobsDir, { recursive: true });
+  await writeFile(new URL(`${jobId}.json`, jobsDir), `${JSON.stringify(job, null, 2)}\n`);
+  try {
+    const currentJob = await getUpdateJob(jobId);
+    assert.equal(currentJob.status, "queued");
+    assert.equal(currentJob.step, "handoff");
+  } finally {
+    await rm(updatesDir, { force: true, recursive: true });
   }
 });
 

@@ -217,10 +217,15 @@ model ProviderSetting {
   displayName String
   apiKey      String
   baseUrl     String?
+  cliProxyApiKey String?
+  cliProxyManagementKey String?
+  cliProxyBaseUrl String?
   imageModel  String
   textModel   String   @default("gpt-5.5")
+  videoModel String?
   enabledImageModels String?
   enabledReversePromptModels String?
+  enabledVideoModels String?
   enabled     Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -238,10 +243,15 @@ model ProviderSettingHistory {
   displayName String
   apiKey      String
   baseUrl     String?
+  cliProxyApiKey String?
+  cliProxyManagementKey String?
+  cliProxyBaseUrl String?
   imageModel  String
   textModel   String
+  videoModel String?
   enabledImageModels String?
   enabledReversePromptModels String?
+  enabledVideoModels String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

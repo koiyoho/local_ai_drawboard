@@ -182,8 +182,10 @@ type GenerationJobParams = {
   count?: number;
   model?: string;
   referenceAssetIds?: string[];
+  referenceMode?: VideoReferenceMode;
   referenceItems?: ReferenceItem[];
   size?: string;
+  videoOptions?: VideoOptions;
 };
 
 type ImageModelOption = {
@@ -204,6 +206,15 @@ type ReferenceWeight = "low" | "medium" | "high";
 type ReferencePreset = "outfit" | "product" | "logo" | "scene";
 type ReferenceConflictStrategy = "blend" | "prefer_high" | "manual";
 type ReferenceGroupKey = "person" | "clothing" | "product" | "scene" | "unmarked";
+type VideoAspectRatio = "2:3" | "3:2" | "1:1" | "9:16" | "16:9";
+type VideoDurationSec = 6 | 10;
+type VideoReferenceMode = "image" | "reference_images";
+type VideoResolution = "480p" | "720p";
+type VideoOptions = {
+  aspectRatio: VideoAspectRatio;
+  durationSec: VideoDurationSec;
+  resolution: VideoResolution;
+};
 type ReferenceAssetMap = Partial<Record<ReferenceRole, string>>;
 type ReferenceItem = {
   assetId: string;
@@ -262,6 +273,7 @@ type AppSnapshot = {
   sourceAssetId?: string;
   sourcePrompt?: string;
   toolbarOffset?: Point;
+  videoReferenceMode?: VideoReferenceMode;
 };
 
 type SelectionInfo = {
@@ -284,13 +296,13 @@ type ToolbarDragState = {
   startPointer: Point;
 };
 
-type WorkspaceView = "canvas" | "generate" | "edit" | "storyboard" | "assets" | "more";
-type DesktopWorkspaceView = "generate" | "edit" | "storyboard" | "assets";
+type WorkspaceView = "canvas" | "generate" | "edit" | "video" | "storyboard" | "assets" | "more";
+type DesktopWorkspaceView = "generate" | "edit" | "video" | "storyboard" | "assets";
 type MobileSheetLevel = "collapsed" | "half" | "full";
 type MobileAssetsTab = "current" | "history" | "versions";
-type AssetKindFilter = "all" | "upload" | "generated" | "source" | "mask";
+type AssetKindFilter = "all" | "upload" | "generated" | "source" | "mask" | "video";
 type GenerationNotice = {
-  scope: "source" | "edit";
+  scope: "source" | "edit" | "video";
   tone: "success" | "error";
   text: string;
 };
@@ -332,11 +344,13 @@ const assetKindLabels: Record<string, string> = {
   mask: "蒙版",
   source: "源图",
   upload: "上传",
+  video: "视频",
 };
 const assetKindFilterOptions: Array<{ value: AssetKindFilter; label: string }> = [
   { value: "all", label: "全部" },
   { value: "upload", label: "上传" },
   { value: "generated", label: "生成" },
+  { value: "video", label: "视频" },
   { value: "source", label: "源图" },
   { value: "mask", label: "蒙版" },
 ];
@@ -464,6 +478,8 @@ const DEFAULT_GENERATION_COUNT = 1;
 const MAX_GENERATION_COUNT = 3;
 const DEFAULT_SOURCE_IMAGE_SIZE: ImageSize = "2048x1152";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2";
+const DEFAULT_VIDEO_MODEL = "cliproxy:grok-imagine-video";
+const DEFAULT_VIDEO_OPTIONS: VideoOptions = { aspectRatio: "9:16", durationSec: 6, resolution: "720p" };
 const DEFAULT_PRESERVE_STRENGTH: PreserveStrength = "balanced";
 const DEFAULT_REFERENCE_FIT: ReferenceFit = "balanced";
 const GENERATION_RECOVERY_ATTEMPTS = 40;
@@ -519,11 +535,12 @@ const mobileWorkspaceViewLabels: Record<WorkspaceView, string> = {
   more: "更多",
   generate: "AI 生图",
   edit: "AI 改图",
+  video: "AI 视频",
   storyboard: "分镜",
   assets: "素材",
 };
 
-const desktopWorkspaceViews: DesktopWorkspaceView[] = ["generate", "edit", "storyboard", "assets"];
+const desktopWorkspaceViews: DesktopWorkspaceView[] = ["generate", "edit", "video", "storyboard", "assets"];
 
 export function BoardWorkspace({
   initialBoard,
@@ -602,6 +619,15 @@ export function BoardWorkspace({
   const [imageModelOptions, setImageModelOptions] = useState<ImageModelOption[]>([
     { id: initialAppSnapshot.selectedImageModel ?? DEFAULT_IMAGE_MODEL, label: initialAppSnapshot.selectedImageModel ?? DEFAULT_IMAGE_MODEL },
   ]);
+  const [videoModelOptions, setVideoModelOptions] = useState<ImageModelOption[]>([
+    { channel: "cliproxy", id: "grok-imagine-video", label: "Grok Imagine Video" },
+  ]);
+  const [selectedVideoModel, setSelectedVideoModel] = useState(DEFAULT_VIDEO_MODEL);
+  const [videoPrompt, setVideoPrompt] = useState("");
+  const [videoOptions, setVideoOptions] = useState<VideoOptions>(DEFAULT_VIDEO_OPTIONS);
+  const [videoReferenceMode, setVideoReferenceMode] = useState<VideoReferenceMode>(
+    initialAppSnapshot.videoReferenceMode ?? "image",
+  );
   const [reversePromptModelOptions, setReversePromptModelOptions] = useState<ImageModelOption[]>([
     { id: "gpt-5.5", label: "gpt-5.5" },
   ]);
@@ -752,6 +778,10 @@ export function BoardWorkspace({
       : isGenerating
         ? `${activeGeneration?.taskLabel ?? "生成"}中 · ${activeGenerationElapsed || "计时中"}`
         : "开始 AI 改图";
+  const videoButtonLabel =
+    activeGeneration?.modeLabel === "AI 视频"
+      ? `AI 视频中 · ${activeGenerationElapsed}`
+      : "开始生成视频";
   const activeMobileMaskColor = mobileMaskColor || mobileMaskColorOptions[0];
   const canEditMobileMask = Boolean(sourceAsset && sourceAssetSize && mobileMaskColor);
   const referenceAssets = useMemo(
@@ -762,6 +792,29 @@ export function BoardWorkspace({
   const referenceConflictEntries = useMemo(() => getReferenceConflictEntries(referenceItems), [referenceItems]);
   const markedReferenceCount = referenceItems.filter((item) => item.role).length;
   const highWeightReferenceCount = referenceItems.filter((item) => item.weight === "high").length;
+  const videoReferenceAssets = [sourceAsset, ...referenceAssets.map((item) => item.asset)]
+    .filter((asset): asset is AssetPayload => Boolean(asset))
+    .filter((asset, index, assets) => assets.findIndex((item) => item.id === asset.id) === index)
+    .slice(0, 7);
+  const videoFirstFrameAsset = videoReferenceAssets[0] ?? null;
+  const effectiveVideoReferenceMode: VideoReferenceMode = videoReferenceMode === "reference_images" && videoReferenceAssets.length > 0
+    ? "reference_images"
+    : "image";
+  const videoRequestReferenceAssets = effectiveVideoReferenceMode === "reference_images"
+    ? videoReferenceAssets
+    : videoFirstFrameAsset
+      ? [videoFirstFrameAsset]
+      : [];
+  const selectedVideoModelLabel =
+    videoModelOptions.find((model) => getProviderModelOptionValue(model) === selectedVideoModel || model.id === selectedVideoModel)?.label ??
+    selectedVideoModel;
+  const desktopVideoActionMeta = [
+    videoOptions.aspectRatio,
+    `${videoOptions.durationSec}s`,
+    videoOptions.resolution,
+    selectedVideoModelLabel,
+    getVideoReferenceModeLabel(effectiveVideoReferenceMode, videoRequestReferenceAssets.length),
+  ];
   const latestGenerationJob = board.jobs[0] ?? null;
   const latestGenerationParams = useMemo(
     () => (latestGenerationJob ? getGenerationJobParams(latestGenerationJob) : {}),
@@ -771,7 +824,7 @@ export function BoardWorkspace({
   const latestGenerationRecord = latestGenerationJob
     ? {
         count: latestGenerationParams.count ?? latestGenerationJob.results.length,
-        modeLabel: latestGenerationJob.mode === "text_to_image" ? "AI 生图" : "AI 改图",
+        modeLabel: getGenerationModeLabel(latestGenerationJob.mode),
         model: latestGenerationParams.model ?? "当前图像模型",
         prompt: latestGenerationJob.prompt,
         referenceCount:
@@ -780,7 +833,7 @@ export function BoardWorkspace({
           0,
         resultCount: latestGenerationJob.results.length,
         size: latestGenerationParams.size ?? "未记录",
-        status: getGenerationJobStatusLabel(latestGenerationJob.status),
+        status: getGenerationStatusLabel(latestGenerationJob.status, getGenerationModeLabel(latestGenerationJob.mode)),
       }
     : null;
   const shouldShowLatestGenerationRecord = Boolean(latestGenerationRecord && !activeGeneration);
@@ -1057,7 +1110,7 @@ export function BoardWorkspace({
             throw new Error(payload.error ?? "载入素材失败");
           }
           const normalized = normalizeAssetListResponse(payload);
-          const assets = normalized.assets.filter((asset) => asset.mimeType.startsWith("image/"));
+          const assets = normalized.assets.filter(isRenderableAsset);
           setVisibleImageAssets(assets);
           setAssetListNextCursor(normalized.nextCursor);
           setAssetListTotalMatching(normalized.totalMatching);
@@ -1133,13 +1186,14 @@ export function BoardWorkspace({
     preserveStrength,
     referenceFit,
     referenceAssetIds,
-    referenceAssetIdsByRole,
-    referenceItems,
-    reversePromptByAssetId,
-    scheduleSave,
-    sourceImageSize,
-    sourceAssetId,
-  ]);
+      referenceAssetIdsByRole,
+      referenceItems,
+      reversePromptByAssetId,
+      scheduleSave,
+      sourceImageSize,
+      sourceAssetId,
+      videoReferenceMode,
+    ]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1154,6 +1208,8 @@ export function BoardWorkspace({
           selectedImageModel?: string;
           selectedModel?: string;
           selectedReversePromptModel?: string;
+          selectedVideoModel?: string;
+          videoModels?: ImageModelOption[];
         };
         if (isCancelled) return;
         if (!response.ok) {
@@ -1176,6 +1232,14 @@ export function BoardWorkspace({
             payload.reversePromptModels!.some((model) => providerModelOptionMatchesSelection(model, current))
               ? normalizeProviderModelSelection(payload.reversePromptModels!, current)
               : getDefaultProviderModelSelection(payload.reversePromptModels!, payload.selectedReversePromptModel),
+          );
+        }
+        if (Array.isArray(payload.videoModels) && payload.videoModels.length > 0) {
+          setVideoModelOptions(payload.videoModels);
+          setSelectedVideoModel((current) =>
+            payload.videoModels!.some((model) => providerModelOptionMatchesSelection(model, current))
+              ? normalizeProviderModelSelection(payload.videoModels!, current)
+              : getDefaultProviderModelSelection(payload.videoModels!, payload.selectedVideoModel),
           );
         }
       } catch {
@@ -1693,9 +1757,7 @@ export function BoardWorkspace({
       if (!response.ok) {
         throw new Error(payload.error ?? "载入更多素材失败");
       }
-      const assets = normalizeAssetListResponse(payload).assets.filter((asset) =>
-        asset.mimeType.startsWith("image/"),
-      );
+      const assets = normalizeAssetListResponse(payload).assets.filter(isRenderableAsset);
       setVisibleImageAssets((current) => mergeAssetsById(current, assets));
       setAssetListNextCursor(payload.nextCursor ?? null);
       setAssetListTotalMatching(payload.totalMatching ?? null);
@@ -1729,7 +1791,7 @@ export function BoardWorkspace({
   }
 
   function updateActiveGenerationStatus(status: string) {
-    setActiveGeneration((current) => current ? { ...current, statusText: getGenerationJobStatusLabel(status) } : current);
+    setActiveGeneration((current) => current ? { ...current, statusText: getGenerationStatusLabel(status, current.modeLabel) } : current);
   }
 
   async function startGenerationJob(body: Record<string, unknown>) {
@@ -1741,6 +1803,21 @@ export function BoardWorkspace({
     const payload = (await response.json()) as { error?: string; job?: JobPayload; model?: string; results?: AssetPayload[] };
     if (!response.ok || !payload.job) {
       throw new Error(payload.error ?? "生成失败");
+    }
+    mergeGenerationJobIntoBoard(payload.job);
+    updateActiveGenerationStatus(payload.job.status);
+    return payload.job;
+  }
+
+  async function startVideoGenerationJob(body: Record<string, unknown>) {
+    const response = await apiFetch("/api/video-generation-jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...body, waitForCompletion: false }),
+    });
+    const payload = (await response.json()) as { asset?: AssetPayload | null; error?: string; job?: JobPayload; providerJobId?: string | null };
+    if (!response.ok || !payload.job) {
+      throw new Error(payload.error ?? "视频生成失败");
     }
     mergeGenerationJobIntoBoard(payload.job);
     updateActiveGenerationStatus(payload.job.status);
@@ -1759,6 +1836,9 @@ export function BoardWorkspace({
       updateActiveGenerationStatus(payload.job.status);
       if (payload.job.status === "failed") {
         throw new Error(payload.job.errorMessage ?? "生成失败");
+      }
+      if (payload.job.status === "cancelled") {
+        throw new Error(payload.job.errorMessage ?? "生成任务已中止");
       }
       if (payload.job.status === "succeeded") {
         return { job: payload.job, results: payload.results ?? payload.job.results.map((result) => result.asset) };
@@ -1973,6 +2053,9 @@ export function BoardWorkspace({
     batchCount = 1,
     batchIndex = 0,
   ) {
+    if (!asset.mimeType.startsWith("image/")) {
+      throw new Error("视频已保存到素材库，不能作为图片图层载入画布");
+    }
     const { height, width } = await getAssetImageSize(asset);
     const targetWidth = placement?.w ?? Math.min(width, 640);
     const displayWidth = batchCount > 1 ? Math.min(targetWidth, 300) : targetWidth;
@@ -2000,19 +2083,28 @@ export function BoardWorkspace({
   }
 
   async function insertAssets(assets: AssetPayload[], placement?: ShapePlacement) {
-    if (assets.length === 0) {
+    const imageAssetsToInsert = assets.filter((asset) => asset.mimeType.startsWith("image/"));
+    if (imageAssetsToInsert.length !== assets.length) {
+      const videoCount = assets.length - imageAssetsToInsert.length;
+      if (imageAssetsToInsert.length === 0) {
+        setStatus(videoCount > 0 ? "视频已保存到素材库，不能作为图片图层载入画布" : "没有可载入的图片");
+        return [];
+      }
+      setStatus(`${videoCount} 个视频已保存到素材库，仅载入图片结果`);
+    }
+    if (imageAssetsToInsert.length === 0) {
       setStatus("没有可载入的图片");
       return [];
     }
     const objects: BoardImageObject[] = [];
     const currentObjects = getCurrentPageObjects(boardDocumentRef.current);
     const stagedObjects = [...currentObjects];
-    for (const [index, asset] of assets.entries()) {
+    for (const [index, asset] of imageAssetsToInsert.entries()) {
       const { height, width } = await getAssetImageSize(asset);
       const targetWidth = placement?.w ?? Math.min(width, 640);
-      const displayWidth = assets.length > 1 ? Math.min(targetWidth, 300) : targetWidth;
+      const displayWidth = imageAssetsToInsert.length > 1 ? Math.min(targetWidth, 300) : targetWidth;
       const targetHeight = placement?.h ?? Math.round((targetWidth / width) * height);
-      const displayHeight = assets.length > 1
+      const displayHeight = imageAssetsToInsert.length > 1
         ? Math.round((displayWidth / targetWidth) * targetHeight)
         : targetHeight;
       const { x, y } = getNextImageInsertPosition(stagedObjects, placement, displayWidth, displayHeight, index);
@@ -2032,7 +2124,7 @@ export function BoardWorkspace({
     const result = appendObjectsToCurrentPage(boardDocumentRef.current, objects);
     setDocumentAndSave(result.document);
     setSelectedObjectIds(result.createdObjectIds);
-    setSourceAssetId(assets[0]?.id ?? "");
+    setSourceAssetId(imageAssetsToInsert[0]?.id ?? "");
     setMobileView("canvas");
     setStatus(`已载入 ${result.createdObjectIds.length} 张图片到画板`);
     return result.createdObjectIds;
@@ -3321,6 +3413,15 @@ export function BoardWorkspace({
       if (params.size && isValidImageSize(params.size)) {
         setSourceImageSize(params.size);
       }
+      setDesktopView("generate");
+      setMobileView("generate");
+    } else if (job.mode === "text_to_video") {
+      setVideoPrompt(job.prompt);
+      setVideoOptions(params.videoOptions ?? DEFAULT_VIDEO_OPTIONS);
+      setVideoReferenceMode(params.referenceMode ?? "image");
+      if (params.model) setSelectedVideoModel(params.model);
+      setDesktopView("video");
+      setMobileView("video");
     } else {
       setPrompt(job.prompt);
       if (params.size && isValidImageSize(params.size)) {
@@ -3329,12 +3430,38 @@ export function BoardWorkspace({
       if (job.sourceAssetId) {
         setSourceAssetId(job.sourceAssetId);
       }
+      setDesktopView("edit");
+      setMobileView("edit");
     }
     setStatus("已复用最新生成记录");
   }
 
   function retryGenerationJob(job: JobPayload) {
     const params = getGenerationJobParams(job);
+    if (job.mode === "text_to_video") {
+      const referenceAssetsForRequest = (params.referenceAssetIds ?? [])
+        .map((assetId) => board.assets.find((asset) => asset.id === assetId))
+        .filter((asset): asset is AssetPayload => Boolean(asset && asset.mimeType.startsWith("image/")))
+        .slice(0, 7);
+      const nextVideoOptions = params.videoOptions ?? DEFAULT_VIDEO_OPTIONS;
+      const nextReferenceMode = params.referenceMode ?? "image";
+      const nextModel = params.model ?? selectedVideoModel;
+      setVideoPrompt(job.prompt);
+      setVideoOptions(nextVideoOptions);
+      setVideoReferenceMode(nextReferenceMode);
+      if (params.model) setSelectedVideoModel(params.model);
+      setDesktopView("video");
+      setMobileView("video");
+      setMobileSheetLevel("half");
+      runVideoGeneration({
+        model: nextModel,
+        promptText: job.prompt,
+        referenceAssetsForRequest,
+        referenceMode: nextReferenceMode,
+        videoOptions: nextVideoOptions,
+      });
+      return;
+    }
     const nextReferenceItems =
       params.referenceItems ??
       params.referenceAssetIds?.map((assetId) => ({ assetId })) ??
@@ -3420,7 +3547,7 @@ export function BoardWorkspace({
       openResultPicker(latestGenerationJob);
       return;
     }
-    setMobileView(latestGenerationJob.mode === "text_to_image" ? "generate" : "edit");
+    setMobileView(getGenerationWorkspaceView(latestGenerationJob.mode));
     setMobileSheetLevel("half");
   }
 
@@ -3712,6 +3839,63 @@ export function BoardWorkspace({
       setResultPickerJobId(payload.job.id);
       setResultPickerComparisonAssetId("");
     }
+  }
+
+  function runVideoGeneration(input: {
+    model: string;
+    promptText: string;
+    referenceAssetsForRequest: AssetPayload[];
+    referenceMode: VideoReferenceMode;
+    videoOptions: VideoOptions;
+  }) {
+    startTransition(async () => {
+      const generationStartedAtMs = Date.now();
+      setActiveGeneration({ modeLabel: "AI 视频", prompt: input.promptText, startedAtMs: generationStartedAtMs });
+      setStatus("AI 视频生成中，已运行 0 秒");
+      setGenerationNotice(null);
+      try {
+        const job = await startVideoGenerationJob({
+          boardId: board.id,
+          model: input.model,
+          prompt: input.promptText,
+          referenceAssetIds: input.referenceAssetsForRequest.map((asset) => asset.id),
+          referenceMode: input.referenceMode,
+          videoOptions: input.videoOptions,
+        });
+        const payload = await waitForGenerationJob(job.id);
+        const results = payload.results;
+        mergeGenerationJobIntoBoard(payload.job);
+        mergeAssetsIntoBoard(results);
+        addAssetsToVisibleList(results);
+        refreshVisibleAssetList();
+        void refreshBoard().catch(() => undefined);
+        const doneText = results.length > 0 ? `已生成 ${results.length} 个视频` : "视频任务已完成";
+        setStatus(doneText);
+        setGenerationNotice({ scope: "video", tone: "success", text: doneText });
+        setMobileView("assets");
+      } catch (error) {
+        const errorText = getFriendlyErrorMessage(error, "视频生成失败");
+        setStatus(errorText);
+        setGenerationNotice({ scope: "video", tone: "error", text: errorText });
+      } finally {
+        setActiveGeneration(null);
+      }
+    });
+  }
+
+  function generateBoardVideo() {
+    const promptText = videoPrompt.trim();
+    if (!promptText) {
+      setStatus("请先填写视频提示词");
+      return;
+    }
+    runVideoGeneration({
+      model: selectedVideoModel,
+      promptText,
+      referenceAssetsForRequest: videoRequestReferenceAssets,
+      referenceMode: effectiveVideoReferenceMode,
+      videoOptions,
+    });
   }
 
   function getSelectedImageAssetFromDocument() {
@@ -4133,6 +4317,77 @@ export function BoardWorkspace({
     );
   }
 
+  function renderVideoModelSelect(id: string) {
+    return (
+      <label className="creative-model-select" htmlFor={id}>
+        <span>视频模型</span>
+        <select id={id} onChange={(event) => setSelectedVideoModel(event.target.value)} value={selectedVideoModel}>
+          {videoModelOptions.map((model) => (
+            <option key={getProviderModelOptionValue(model)} value={getProviderModelOptionValue(model)}>
+              {model.label}
+            </option>
+          ))}
+        </select>
+        {imageModelStatus ? <em>{imageModelStatus}</em> : null}
+      </label>
+    );
+  }
+
+  function renderVideoOptionControls() {
+    return (
+      <div className="creative-field-group">
+        <div className="creative-field-title">视频规格</div>
+        <div className="quality-segment-row">
+          {(["9:16", "16:9", "1:1", "2:3", "3:2"] as VideoAspectRatio[]).map((value) => (
+            <button aria-pressed={videoOptions.aspectRatio === value} key={value} onClick={() => setVideoOptions((current) => ({ ...current, aspectRatio: value }))} type="button">
+              {value}
+            </button>
+          ))}
+        </div>
+        <div className="quality-segment-row">
+          {([6, 10] as VideoDurationSec[]).map((value) => (
+            <button aria-pressed={videoOptions.durationSec === value} key={value} onClick={() => setVideoOptions((current) => ({ ...current, durationSec: value }))} type="button">
+              {value}s
+            </button>
+          ))}
+          {(["480p", "720p"] as VideoResolution[]).map((value) => (
+            <button aria-pressed={videoOptions.resolution === value} key={value} onClick={() => setVideoOptions((current) => ({ ...current, resolution: value }))} type="button">
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderVideoReferencePanel() {
+    return (
+      <div className="creative-field-group">
+        <div className="creative-field-title">视频参考</div>
+        <div className="quality-segment-row">
+          <button aria-pressed={effectiveVideoReferenceMode === "image"} onClick={() => setVideoReferenceMode("image")} type="button">
+            单图首帧
+          </button>
+          <button aria-pressed={effectiveVideoReferenceMode === "reference_images"} onClick={() => setVideoReferenceMode("reference_images")} type="button">
+            多图参考
+          </button>
+        </div>
+        <p className="muted">{getVideoReferenceSummary(videoRequestReferenceAssets)}</p>
+        {videoRequestReferenceAssets.length > 0 ? (
+          <div className="reference-chip-list">
+            {videoRequestReferenceAssets.map((asset, index) => (
+              <button key={asset.id} onClick={() => openAssetPreview(asset)} type="button">
+                {index === 0 ? "主图" : `参考 ${index}`} · {asset.width && asset.height ? `${asset.width}×${asset.height}` : asset.id.slice(0, 6)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">可先把图片设为源图，或添加参考图；也可以纯文本生成。</p>
+        )}
+      </div>
+    );
+  }
+
   function renderDesktopGenerateAdvancedSettings() {
     return (
       <details className="desktop-advanced-settings">
@@ -4387,8 +4642,8 @@ export function BoardWorkspace({
     return (
       <article className="history-item" key={key}>
         <button className="history-item-main" onClick={() => reuseGenerationJob(job)} type="button">
-          <span>{job.mode === "text_to_image" ? "AI 生图" : "AI 改图"}</span>
-          <strong>{getGenerationJobStatusLabel(job.status)}</strong>
+          <span>{getGenerationModeLabel(job.mode)}</span>
+          <strong>{getGenerationStatusLabel(job.status, getGenerationModeLabel(job.mode))}</strong>
           <em>{durationMs === null ? "耗时未记录" : `耗时 ${formatDuration(durationMs)}`}</em>
           <small title={promptText}>提示词：{promptText}</small>
         </button>
@@ -4466,7 +4721,11 @@ export function BoardWorkspace({
           onClick={() => openAssetPreview(asset)}
           type="button"
         >
-          <img alt="" decoding="async" loading="lazy" src={apiUrl(getAssetThumbnailUrl(asset))} />
+          {asset.mimeType.startsWith("video/") ? (
+            <video preload="metadata" src={apiUrl(asset.publicUrl)} />
+          ) : (
+            <img alt="" decoding="async" loading="lazy" src={apiUrl(getAssetThumbnailUrl(asset))} />
+          )}
         </button>
         <div className="asset-card-actions">
           <button
@@ -4673,7 +4932,11 @@ export function BoardWorkspace({
                 type="button"
               >
                 <span className="filmstrip-thumb-frame">
-                  <img alt="" src={apiUrl(asset.publicUrl)} />
+                  {asset.mimeType.startsWith("video/") ? (
+                    <video preload="metadata" src={apiUrl(asset.publicUrl)} />
+                  ) : (
+                    <img alt="" src={apiUrl(asset.publicUrl)} />
+                  )}
                   <em className="filmstrip-primary-badge">{primaryBadge}</em>
                 </span>
                 <span>{asset.width && asset.height ? `${asset.width}×${asset.height}` : kindLabel}</span>
@@ -4790,6 +5053,10 @@ export function BoardWorkspace({
           <AppIcon icon={IconAddImage} size="sm" />
           参考
         </button>
+        <button aria-label="设为视频首帧" onClick={() => { setSelectedImageAsSource(); setDesktopView("video"); }} title="设为视频首帧" type="button">
+          <AppIcon icon={IconAi} size="sm" />
+          视频
+        </button>
         <button aria-label="生成变体" onClick={generateSelectedImageVariant} title="生成变体" type="button">
           <AppIcon icon={IconAiEdit} size="sm" />
           变体
@@ -4835,6 +5102,11 @@ export function BoardWorkspace({
         {isImageObject ? (
           <button onClick={setSelectedImageAsSource} type="button" role="menuitem">
             设为源图
+          </button>
+        ) : null}
+        {isImageObject ? (
+          <button onClick={() => { setSelectedImageAsSource(); setDesktopView("video"); setCanvasContextMenu(null); }} type="button" role="menuitem">
+            设为视频首帧
           </button>
         ) : null}
         {isImageObject ? (
@@ -4910,6 +5182,10 @@ export function BoardWorkspace({
                 <button onClick={setSelectedImageAsPrimaryReference} type="button" role="menuitem">
                   <AppIcon icon={IconAddImage} size={18} />
                   参考
+                </button>
+                <button onClick={() => { setSelectedImageAsSource(); openMobileView("video"); setCanvasContextMenu(null); }} type="button" role="menuitem">
+                  <AppIcon icon={IconAi} size={18} />
+                  视频
                 </button>
                 <button onClick={generateSelectedImageVariant} type="button" role="menuitem">
                   <AppIcon icon={IconAiEdit} size={18} />
@@ -5260,6 +5536,17 @@ export function BoardWorkspace({
           <AppIcon icon={IconAiEdit} size={16} />
           多角度
         </button>
+        <button
+          disabled={!selectedImageObject}
+          onClick={() => {
+            setSelectedImageAsSource();
+            openMobileView("video");
+          }}
+          type="button"
+        >
+          <AppIcon icon={IconAi} size={16} />
+          视频
+        </button>
       </div>
     );
   }
@@ -5300,6 +5587,7 @@ export function BoardWorkspace({
       { icon: IconAssets, label: "素材", view: "assets" },
       { icon: IconAi, label: "生图", view: "generate" },
       { icon: IconPaint, label: "改图", view: "edit" },
+      { icon: IconAi, label: "视频", view: "video" },
       { icon: IconBoards, label: "分镜", view: "storyboard" },
       { icon: IconBoards, label: "更多", view: "more" },
     ];
@@ -5329,7 +5617,15 @@ export function BoardWorkspace({
       <div className={latestGenerationHasError ? "mobile-generation-status has-error" : "mobile-generation-status"}>
         <button
           className="mobile-generation-status-main"
-          onClick={() => openMobileView(activeGeneration?.modeLabel === "AI 改图" ? "edit" : "generate")}
+          onClick={() =>
+            openMobileView(
+              activeGeneration?.modeLabel === "AI 视频"
+                ? "video"
+                : activeGeneration?.modeLabel === "AI 改图"
+                  ? "edit"
+                  : "generate",
+            )
+          }
           type="button"
         >
           <AppIcon
@@ -5379,8 +5675,8 @@ export function BoardWorkspace({
               </button>
               <div>
                 <button onClick={() => insertMobileAsset(asset)} type="button">插入</button>
-                <button onClick={() => setAssetAsSource(asset.id)} type="button">源图</button>
-                <button onClick={() => setAssetAsPrimaryReference(asset.id)} type="button">参考</button>
+        {asset.mimeType.startsWith("image/") ? <button onClick={() => setAssetAsSource(asset.id)} type="button">源图</button> : null}
+        {asset.mimeType.startsWith("image/") ? <button onClick={() => setAssetAsPrimaryReference(asset.id)} type="button">参考</button> : null}
               </div>
             </article>
           ))}
@@ -5429,6 +5725,7 @@ export function BoardWorkspace({
           <div className="mobile-sheet-content">
             {mobileView === "generate" ? renderMobileGenerateSheet() : null}
             {mobileView === "edit" ? renderMobileEditSheet() : null}
+            {mobileView === "video" ? renderMobileVideoSheet() : null}
             {mobileView === "storyboard" ? renderMobileStoryboardSheet() : null}
             {mobileView === "assets" ? renderMobileAssetsSheet() : null}
             {mobileView === "more" ? renderMobileMoreSheet() : null}
@@ -5441,6 +5738,7 @@ export function BoardWorkspace({
   function getMobileSheetIcon(view: WorkspaceView) {
     if (view === "generate") return IconAi;
     if (view === "edit") return IconAiEdit;
+    if (view === "video") return IconAi;
     if (view === "storyboard") return IconBoards;
     if (view === "assets") return IconAssets;
     return IconBoards;
@@ -5666,6 +5964,45 @@ export function BoardWorkspace({
     );
   }
 
+  function renderMobileVideoSheet() {
+    return (
+      <div className="mobile-sheet-stack ai-video-section">
+        <label className="mobile-field-block" htmlFor="mobile-video-prompt">
+          <span>视频提示词</span>
+          <span className="prompt-input-shell">
+            <textarea
+              id="mobile-video-prompt"
+              maxLength={MAX_PROMPT_LENGTH}
+              onChange={(event) => setVideoPrompt(event.target.value)}
+              placeholder="描述镜头运动、主体动作和场景变化"
+              value={videoPrompt}
+            />
+            <button
+              aria-label="清空视频提示词"
+              className="prompt-clear-button"
+              disabled={!videoPrompt.trim()}
+              onClick={() => setVideoPrompt("")}
+              title="清空"
+              type="button"
+            >
+              <AppIcon icon={IconClose} size="sm" />
+            </button>
+          </span>
+        </label>
+        {renderVideoModelSelect("mobile-video-model")}
+        {renderVideoOptionControls()}
+        {renderVideoReferencePanel()}
+        {activeGeneration?.modeLabel === "AI 视频" ? (
+          <p className="generation-result-hint info">{activeGenerationText}</p>
+        ) : null}
+        <button className="primary-generate mobile-primary-action" disabled={isGenerating || !videoPrompt.trim() || videoModelOptions.length === 0} onClick={generateBoardVideo} type="button">
+          {isGenerating ? <AppIcon icon={IconLoading} className="spin" size="md" /> : <AppIcon icon={IconAi} size="md" />}
+          {videoButtonLabel}
+        </button>
+      </div>
+    );
+  }
+
   function renderMobileAssetsSheet() {
     return (
       <div className="mobile-sheet-stack">
@@ -5701,7 +6038,11 @@ export function BoardWorkspace({
                 key={`mobile-asset-${asset.id}`}
               >
                 <button aria-label="预览素材" className="mobile-asset-preview-button" onClick={() => openAssetPreview(asset)} type="button">
-                  <img alt="" src={apiUrl(asset.publicUrl)} />
+        {asset.mimeType.startsWith("video/") ? (
+          <video preload="metadata" src={apiUrl(asset.publicUrl)} />
+        ) : (
+          <img alt="" src={apiUrl(asset.publicUrl)} />
+        )}
                 </button>
                 <span>{assetKindLabels[asset.kind] ?? asset.kind}</span>
                 <div className="mobile-asset-chip-actions">
@@ -5760,13 +6101,14 @@ export function BoardWorkspace({
               <header>
                 <div className="asset-preview-title">
                   <strong>{assetKindLabels[assetPreviewAsset.kind] ?? assetPreviewAsset.kind}</strong>
-                  <span>{assetPreviewAsset.width && assetPreviewAsset.height ? `${assetPreviewAsset.width}×${assetPreviewAsset.height}` : "图片素材"}</span>
+                  <span>{assetPreviewAsset.width && assetPreviewAsset.height ? `${assetPreviewAsset.width}×${assetPreviewAsset.height}` : assetPreviewAsset.mimeType.startsWith("video/") ? "视频素材" : "图片素材"}</span>
                 </div>
                 <div className="asset-preview-toolbar">
                   <div className="asset-preview-tool-group asset-preview-primary-group">
-                    <button onClick={() => void insertAsset(assetPreviewAsset)} type="button">载入</button>
+                    <button disabled={!assetPreviewAsset.mimeType.startsWith("image/")} onClick={() => void insertAsset(assetPreviewAsset)} type="button">载入</button>
                     <button
                       aria-pressed={assetPreviewAsset.id === sourceAsset?.id}
+                      disabled={!assetPreviewAsset.mimeType.startsWith("image/")}
                       onClick={() => setAssetAsSource(assetPreviewAsset.id)}
                       type="button"
                     >
@@ -5774,6 +6116,7 @@ export function BoardWorkspace({
                     </button>
                     <button
                       aria-pressed={referenceAssetIds.includes(assetPreviewAsset.id)}
+                      disabled={!assetPreviewAsset.mimeType.startsWith("image/")}
                       onClick={() => setAssetAsPrimaryReference(assetPreviewAsset.id)}
                       type="button"
                     >
@@ -5798,14 +6141,14 @@ export function BoardWorkspace({
                       下载
                     </button>
                     <button
-                      disabled={reversePromptLoadingAssetId === assetPreviewAsset.id}
+                      disabled={reversePromptLoadingAssetId === assetPreviewAsset.id || !assetPreviewAsset.mimeType.startsWith("image/")}
                       onClick={() => void openReferencePrompt(assetPreviewAsset)}
                       type="button"
                     >
                       {reversePromptByAssetId[assetPreviewAsset.id] ? "提示词" : "反推"}
                     </button>
                     <button
-                      disabled={reversePromptLoadingAssetId === assetPreviewAsset.id}
+                      disabled={reversePromptLoadingAssetId === assetPreviewAsset.id || !assetPreviewAsset.mimeType.startsWith("image/")}
                       onClick={() => void rerunReversePrompt(assetPreviewAsset)}
                       type="button"
                     >
@@ -5861,7 +6204,11 @@ export function BoardWorkspace({
               </header>
               <div className="asset-preview-workbench">
                 <div className="asset-preview-image">
-                  <img alt="" src={apiUrl(assetPreviewAsset.publicUrl)} style={{ transform: `scale(${assetPreviewZoom})` }} />
+                  {assetPreviewAsset.mimeType.startsWith("video/") ? (
+                    <video controls preload="metadata" src={apiUrl(assetPreviewAsset.publicUrl)} style={{ transform: `scale(${assetPreviewZoom})` }} />
+                  ) : (
+                    <img alt="" src={apiUrl(assetPreviewAsset.publicUrl)} style={{ transform: `scale(${assetPreviewZoom})` }} />
+                  )}
                 </div>
                 <aside className="asset-preview-inspector" aria-label="素材属性">
                   <section>
@@ -6031,35 +6378,49 @@ export function BoardWorkspace({
               <header>
                 <div>
                   <strong>结果挑选</strong>
-                  <span>{resultPickerSummary.modeLabel} · {resultPickerSummary.candidateCount} 张候选</span>
+                  <span>{resultPickerSummary.modeLabel} · {resultPickerSummary.candidateCount} 个候选</span>
                 </div>
                 <button aria-label="关闭" onClick={() => setResultPickerJobId("")} type="button">
                   <AppIcon icon={IconClose} size="md" />
                 </button>
               </header>
               <div className="result-picker-grid">
-                {resultPickerJob.results.map(({ asset }, index) => (
-                  <article className="result-picker-card" key={asset.id}>
-                    <button className="result-picker-preview" onClick={() => openAssetPreview(asset)} type="button">
-                      <img alt="" src={apiUrl(asset.publicUrl)} />
-                      <span>候选 {index + 1}</span>
-                    </button>
-                    <div className="result-picker-card-actions">
-                      <button className="result-picker-primary-action" onClick={() => void insertAsset(asset)} type="button">载入</button>
-                      <button onClick={() => setAssetAsSource(asset.id)} type="button">设为源图</button>
-                      <button onClick={() => setAssetAsPrimaryReference(asset.id)} type="button">设为参考</button>
-                      {resultPickerSummary.canCompareWithSource ? (
-                        <button onClick={() => setResultPickerComparisonAssetId(asset.id)} type="button">对比</button>
-                      ) : null}
-                      <button aria-label={asset.isFavorite ? "取消收藏" : "收藏"} aria-pressed={asset.isFavorite} onClick={() => toggleAssetFavorite(asset)} type="button">
-                        <AppIcon icon={IconStar} size="sm" />
+                {resultPickerJob.results.map(({ asset }, index) => {
+                  const isImageAsset = asset.mimeType.startsWith("image/");
+                  return (
+                    <article className="result-picker-card" key={asset.id}>
+                      <button className="result-picker-preview" onClick={() => openAssetPreview(asset)} type="button">
+                        {asset.mimeType.startsWith("video/") ? (
+                          <video preload="metadata" src={apiUrl(asset.publicUrl)} />
+                        ) : (
+                          <img alt="" src={apiUrl(asset.publicUrl)} />
+                        )}
+                        <span>候选 {index + 1}</span>
                       </button>
-                      <button aria-label="删除候选图" className="asset-delete-button" onClick={() => void deleteAsset(asset)} type="button">
-                        <AppIcon icon={IconDelete} size="sm" />
-                      </button>
-                    </div>
-                  </article>
-                ))}
+                      <div className="result-picker-card-actions">
+                        <button
+                          className="result-picker-primary-action"
+                          disabled={!isImageAsset}
+                          onClick={() => void insertAsset(asset)}
+                          type="button"
+                        >
+                          载入
+                        </button>
+                        <button disabled={!isImageAsset} onClick={() => setAssetAsSource(asset.id)} type="button">设为源图</button>
+                        <button disabled={!isImageAsset} onClick={() => setAssetAsPrimaryReference(asset.id)} type="button">设为参考</button>
+                        {resultPickerSummary.canCompareWithSource && isImageAsset ? (
+                          <button onClick={() => setResultPickerComparisonAssetId(asset.id)} type="button">对比</button>
+                        ) : null}
+                        <button aria-label={asset.isFavorite ? "取消收藏" : "收藏"} aria-pressed={asset.isFavorite} onClick={() => toggleAssetFavorite(asset)} type="button">
+                          <AppIcon icon={IconStar} size="sm" />
+                        </button>
+                        <button aria-label="删除候选" className="asset-delete-button" onClick={() => void deleteAsset(asset)} type="button">
+                          <AppIcon icon={IconDelete} size="sm" />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
               {resultPickerComparisonAssetId ? (
                 (() => {
@@ -6454,6 +6815,54 @@ export function BoardWorkspace({
             <button className="primary-generate" disabled={primaryGenerateDisabled} onClick={runPrimaryAiEdit} type="button">
               {isGenerating ? <AppIcon icon={IconLoading} className="spin" size="md" /> : <AppIcon icon={IconAi} size="md" />}
               {editButtonLabel}
+            </button>
+          </div>
+        </div>
+        ) : null}
+
+        {desktopView === "video" ? (
+        <div className="desktop-panel-workflow ai-video-workflow">
+        <div className="desktop-view-panel-stack">
+          <section className="panel-section desktop-view-panel ai-video-section">
+            <div className="section-title">
+              <span>视频生成</span>
+              <span className="pill">{desktopVideoActionMeta.slice(0, 3).join(" · ")}</span>
+            </div>
+            <div className="prompt-input-shell">
+              <textarea
+                maxLength={MAX_PROMPT_LENGTH}
+                onChange={(event) => setVideoPrompt(event.target.value)}
+                placeholder="描述镜头运动、主体动作、场景变化和节奏，例如：镜头从产品推向人物，人物抬头微笑，背景灯光缓慢变亮。"
+                suppressHydrationWarning
+                value={videoPrompt}
+              />
+              <button
+                aria-label="清空视频提示词"
+                className="prompt-clear-button"
+                disabled={!videoPrompt.trim()}
+                onClick={() => setVideoPrompt("")}
+                title="清空"
+                type="button"
+              >
+                <AppIcon icon={IconClose} size="sm" />
+              </button>
+            </div>
+            <div className="prompt-character-count">{videoPrompt.length}/{MAX_PROMPT_LENGTH}</div>
+            {renderVideoModelSelect("desktop-video-model")}
+            {renderVideoOptionControls()}
+            {renderVideoReferencePanel()}
+            {generationNotice?.scope === "video" ? (
+              <div className="desktop-inline-action-summary" aria-live="polite">
+                <strong>{generationNotice.text}</strong>
+                <span>{desktopVideoActionMeta.join(" · ")}</span>
+              </div>
+            ) : null}
+          </section>
+        </div>
+          <div className="desktop-generate-footer" aria-live="polite">
+            <button className="primary-generate" disabled={isGenerating || !videoPrompt.trim() || videoModelOptions.length === 0} onClick={generateBoardVideo} type="button">
+              {isGenerating ? <AppIcon icon={IconLoading} className="spin" size="md" /> : <AppIcon icon={IconAi} size="md" />}
+              {videoButtonLabel}
             </button>
           </div>
         </div>
@@ -7125,6 +7534,7 @@ function getAppSnapshot(snapshot: unknown): AppSnapshot {
     sourceAssetId: typeof snapshot.app.sourceAssetId === "string" ? snapshot.app.sourceAssetId : "",
     sourcePrompt: typeof snapshot.app.sourcePrompt === "string" ? snapshot.app.sourcePrompt : "",
     toolbarOffset: getValidPoint(snapshot.app.toolbarOffset, DEFAULT_TOOLBAR_OFFSET),
+    videoReferenceMode: getValidVideoReferenceMode(snapshot.app.videoReferenceMode),
   };
 }
 
@@ -7153,6 +7563,7 @@ function getGenerationJobParams(job: Pick<JobPayload, "paramsJson">): Generation
       referenceAssetIds: Array.isArray(parsed.referenceAssetIds)
         ? parsed.referenceAssetIds.filter((assetId): assetId is string => typeof assetId === "string")
         : undefined,
+      referenceMode: getValidVideoReferenceMode(parsed.referenceMode),
       referenceItems: Array.isArray(parsed.referenceItems)
         ? parsed.referenceItems
             .filter((item): item is Record<string, unknown> => isRecord(item) && typeof item.assetId === "string")
@@ -7163,10 +7574,28 @@ function getGenerationJobParams(job: Pick<JobPayload, "paramsJson">): Generation
             }))
         : undefined,
       size: typeof parsed.size === "string" ? parsed.size : undefined,
+      videoOptions: getValidVideoOptions(parsed.videoOptions),
     };
   } catch {
     return {};
   }
+}
+
+function getValidVideoOptions(value: unknown): VideoOptions | undefined {
+  if (!isRecord(value)) return undefined;
+  return {
+    aspectRatio: isValidVideoAspectRatio(value.aspectRatio) ? value.aspectRatio : DEFAULT_VIDEO_OPTIONS.aspectRatio,
+    durationSec: value.durationSec === 10 ? 10 : DEFAULT_VIDEO_OPTIONS.durationSec,
+    resolution: value.resolution === "720p" ? "720p" : "480p",
+  };
+}
+
+function isValidVideoAspectRatio(value: unknown): value is VideoAspectRatio {
+  return value === "2:3" || value === "3:2" || value === "1:1" || value === "9:16" || value === "16:9";
+}
+
+function getValidVideoReferenceMode(value: unknown): VideoReferenceMode | undefined {
+  return value === "reference_images" || value === "image" ? value : undefined;
 }
 
 function getReferenceAssetMapFromItems(items: ReferenceItem[]): ReferenceAssetMap {
@@ -7289,6 +7718,47 @@ function getGenerationJobStatusLabel(status: string) {
   if (status === "running") return "运行中";
   if (status === "failed") return "失败";
   return status;
+}
+
+function getGenerationModeLabel(mode: string) {
+  if (mode === "text_to_image") return "AI 生图";
+  if (mode === "text_to_video") return "AI 视频";
+  return "AI 改图";
+}
+
+function getGenerationWorkspaceView(mode: string): WorkspaceView {
+  if (mode === "text_to_image") return "generate";
+  if (mode === "text_to_video") return "video";
+  return "edit";
+}
+
+function getVideoGenerationJobStatusLabel(status: string) {
+  if (status === "preparing") return "正在准备视频任务";
+  if (status === "calling_model") return "视频生成中";
+  if (status === "saving_results") return "正在保存视频";
+  if (status === "succeeded") return "视频已保存";
+  if (status === "failed") return "视频生成失败";
+  if (status === "cancelled") return "已中止视频生成";
+  return getGenerationJobStatusLabel(status);
+}
+
+function getGenerationStatusLabel(status: string, modeLabel?: string) {
+  return modeLabel === "AI 视频" ? getVideoGenerationJobStatusLabel(status) : getGenerationJobStatusLabel(status);
+}
+
+function getVideoReferenceModeLabel(mode: VideoReferenceMode, referenceCount: number) {
+  if (referenceCount <= 0) return "纯文本生成";
+  return mode === "image" ? "单图首帧" : `多图参考 · ${referenceCount} 张`;
+}
+
+function getVideoReferenceSummary(referenceAssets: AssetPayload[]) {
+  if (referenceAssets.length <= 0) return "纯文本生成";
+  if (referenceAssets.length === 1) return "单图首帧";
+  return `多图参考 ${referenceAssets.length} 张`;
+}
+
+function isRenderableAsset(asset: AssetPayload) {
+  return asset.mimeType.startsWith("image/") || asset.mimeType.startsWith("video/");
 }
 
 function formatDuration(ms: number) {
@@ -7425,7 +7895,12 @@ function getBoardAssetsPath(
   const params = new URLSearchParams();
   params.set("limit", String(input.limit));
   if (input.cursor) params.set("cursor", input.cursor);
-  if (input.kind !== "all") params.set("kind", input.kind);
+  if (input.kind === "video") {
+    params.set("media", "video");
+  } else if (input.kind !== "all") {
+    params.set("kind", input.kind);
+    params.set("media", "image");
+  }
   if (input.favoriteOnly) params.set("favorite", "true");
   const tag = normalizeAssetSearchText(input.tag);
   if (tag) params.set("tag", tag);
@@ -7461,9 +7936,13 @@ function assetMatchesServerListFilters(
     tag: string;
   },
 ) {
-  if (!asset.mimeType.startsWith("image/")) return false;
+  if (!isRenderableAsset(asset)) return false;
   if (input.favoriteOnly && !asset.isFavorite) return false;
-  if (input.kind !== "all" && asset.kind !== input.kind) return false;
+  if (input.kind === "video") {
+    if (!asset.mimeType.startsWith("video/")) return false;
+  } else if (input.kind !== "all" && asset.kind !== input.kind) {
+    return false;
+  }
   const tag = normalizeAssetSearchText(input.tag);
   if (tag && !getAssetTags(asset).some((assetTag) => normalizeAssetSearchText(assetTag) === tag)) return false;
   const query = normalizeAssetSearchText(input.q);

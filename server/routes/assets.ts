@@ -60,6 +60,8 @@ export async function registerAssetRoutes(app: FastifyInstance) {
         boardId: board.id,
         ...(query.data.kind ? { kind: query.data.kind } : {}),
         ...(query.data.favoriteOnly ? { isFavorite: true } : {}),
+        ...(query.data.media === "image" ? { mimeType: { startsWith: "image/" } } : {}),
+        ...(query.data.media === "video" ? { mimeType: { startsWith: "video/" } } : {}),
       },
     });
     const typedAssets = assets as Asset[];
@@ -489,6 +491,7 @@ type AssetListQuery = {
   favoriteOnly: boolean;
   kind: AssetKind | null;
   limit: number;
+  media: "all" | "image" | "video";
   q: string | null;
   tag: string | null;
 };
@@ -537,6 +540,8 @@ function parseAssetListQuery(queryValue: unknown): { data: AssetListQuery; ok: t
   const kind = parseOptionalString(query.kind);
   if (!kind.ok) return { error: "kind must be a single value", ok: false };
   if (kind.value !== null && !listableKinds.has(kind.value as AssetKind)) return { error: "Unsupported asset kind", ok: false };
+  const media = parseMediaFilter(query.media);
+  if (!media.ok) return { error: media.error, ok: false };
   const tag = parseOptionalString(query.tag);
   if (!tag.ok) return { error: "tag must be a single value", ok: false };
   const q = parseOptionalString(query.q);
@@ -553,6 +558,7 @@ function parseAssetListQuery(queryValue: unknown): { data: AssetListQuery; ok: t
       favoriteOnly: favorite.value,
       kind: kind.value as AssetKind | null,
       limit,
+      media: media.value,
       q: q.value,
       tag: tag.value ? normalizeSearchText(tag.value) : null,
     },
@@ -572,6 +578,14 @@ function parseOptionalString(value: unknown): { ok: true; value: string | null }
   if (Array.isArray(value)) return { ok: false };
   const text = String(value).trim();
   return { ok: true, value: text ? text : null };
+}
+
+function parseMediaFilter(value: unknown): { ok: true; value: AssetListQuery["media"] } | { error: string; ok: false } {
+  if (value === undefined) return { ok: true, value: "all" };
+  if (Array.isArray(value)) return { error: "media must be image, video, or all", ok: false };
+  const text = String(value).trim();
+  if (text === "image" || text === "video" || text === "all") return { ok: true, value: text };
+  return { error: "media must be image, video, or all", ok: false };
 }
 
 function parseFavoriteFilter(value: unknown): { ok: true; value: boolean } | { error: string; ok: false } {

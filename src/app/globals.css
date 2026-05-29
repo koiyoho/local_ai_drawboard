@@ -11097,6 +11097,168 @@ button:active:not(:disabled) {
   line-height: 1.5;
 }
 
+.cliproxy-settings-card {
+  display: grid;
+  gap: 12px;
+}
+
+.cliproxy-source-summary {
+  grid-template-columns: minmax(120px, 0.6fr) minmax(0, 1.4fr);
+}
+
+.cliproxy-source-summary small,
+.cliproxy-source-summary em {
+  color: #a99f8f;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.cliproxy-source-summary em {
+  color: #f7f0e4;
+}
+
+.cliproxy-init-status,
+.cliproxy-auth-panel,
+.cliproxy-diagnostics {
+  background: rgba(217, 197, 154, 0.08);
+  border: 1px solid rgba(217, 197, 154, 0.22);
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.cliproxy-init-status div {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.cliproxy-init-status span,
+.cliproxy-init-status small,
+.cliproxy-diagnostic-row em {
+  color: #a99f8f;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.cliproxy-init-status strong,
+.cliproxy-diagnostic-row strong {
+  color: #f7f0e4;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.cliproxy-init-status p,
+.cliproxy-diagnostic-row span {
+  color: #d9c59a;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.cliproxy-init-status.is-ok,
+.cliproxy-diagnostic-row.is-ok {
+  background: rgba(100, 170, 118, 0.12);
+  border-color: rgba(100, 170, 118, 0.35);
+}
+
+.cliproxy-init-status.is-warning {
+  background: rgba(199, 154, 58, 0.12);
+  border-color: rgba(199, 154, 58, 0.38);
+}
+
+.cliproxy-init-status.is-skipped,
+.cliproxy-diagnostic-row.is-not_configured {
+  background: rgba(169, 159, 143, 0.08);
+  border-color: rgba(169, 159, 143, 0.28);
+}
+
+.cliproxy-diagnostic-row.is-error {
+  background: rgba(170, 82, 82, 0.12);
+  border-color: rgba(170, 82, 82, 0.35);
+}
+
+.cliproxy-auth-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cliproxy-auth-grid.is-compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cliproxy-auth-grid article,
+.cliproxy-auth-command,
+.cliproxy-diagnostic-row {
+  background: #171510;
+  border: 1px solid rgba(222, 203, 163, 0.16);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.cliproxy-auth-grid button {
+  align-items: center;
+  background: #2b271f;
+  border: 1px solid rgba(222, 203, 163, 0.2);
+  border-radius: 9px;
+  color: #f4eddf;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 750;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.cliproxy-auth-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.cliproxy-auth-grid strong {
+  color: #f7f0e4;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.cliproxy-auth-grid span,
+.cliproxy-auth-command span,
+.cliproxy-auth-command em {
+  color: #a99f8f;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.cliproxy-auth-grid small {
+  color: #d9c59a;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.cliproxy-auth-command code {
+  color: #f7f0e4;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .admin-review-list,
 .admin-asset-integrity-list {
   display: grid;
@@ -11758,9 +11920,11 @@ button:active:not(:disabled) {
     min-height: 104px;
   }
 
-  .inline-form,
-  .provider-grid,
-  .admin-usage-overview,
+    .inline-form,
+    .cliproxy-auth-grid,
+    .cliproxy-auth-grid.is-compact,
+    .provider-grid,
+    .admin-usage-overview,
   .admin-usage-summary,
   .admin-review-row,
   .admin-asset-integrity-row {

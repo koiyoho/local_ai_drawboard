@@ -84,11 +84,16 @@ test("provider settings save history and can be reapplied without exposing api k
       body: {
         apiKey: "sk-first-secret",
         baseUrl: "https://api.first.example/v1",
+        cliProxyApiKey: "cliproxy-first-secret",
+        cliProxyBaseUrl: "https://cliproxy.first.example/v1",
+        cliProxyManagementKey: "cliproxy-management-first-secret",
         displayName: "First API",
         enabledImageModels: [{ enabled: true, id: "gpt-image-2", label: "GPT Image" }],
         enabledReversePromptModels: [{ enabled: true, id: "gpt-5.5", label: "GPT 5.5" }],
+        enabledVideoModels: [{ channel: "cliproxy", enabled: true, id: "grok-imagine-video", label: "Grok Video" }],
         imageModel: "gpt-image-2",
         textModel: "gpt-5.5",
+        videoModel: "cliproxy:grok-imagine-video",
       },
       headers: { cookie },
       method: "PUT",
@@ -98,6 +103,7 @@ test("provider settings save history and can be reapplied without exposing api k
     const firstHistory = JSON.parse(firstSave.body).histories[0];
     assert.equal(firstHistory.displayName, "First API");
     assert.equal(JSON.stringify(firstHistory).includes("sk-first-secret"), false);
+    assert.equal(JSON.stringify(firstHistory).includes("cliproxy-first-secret"), false);
 
     const secondSave = await app.inject({
       body: {
@@ -125,10 +131,15 @@ test("provider settings save history and can be reapplied without exposing api k
     const applied = JSON.parse(applyResponse.body).providerSetting;
     assert.equal(applied.displayName, "First API");
     assert.equal(applied.imageModel, "gpt-image-2");
+    assert.equal(applied.cliProxyBaseUrl, "https://cliproxy.first.example/v1");
+    assert.equal(applied.videoModel, "cliproxy:grok-imagine-video");
     assert.equal(JSON.stringify(applied).includes("sk-first-secret"), false);
+    assert.equal(JSON.stringify(applied).includes("cliproxy-first-secret"), false);
 
     const stored = await prisma.providerSetting.findUnique({ where: { userId_provider: { provider: "openai-compatible", userId: user.id } } });
     assert.equal(stored.apiKey, "sk-first-secret");
+    assert.equal(stored.cliProxyApiKey, "cliproxy-first-secret");
+    assert.equal(stored.cliProxyManagementKey, "cliproxy-management-first-secret");
   } finally {
     await app.close();
   }
@@ -163,6 +174,10 @@ test("admin can publish enabled model options for frontend selection", async () 
           { enabled: true, id: "gpt-5.5", label: "GPT 5.5" },
           { enabled: false, id: "cheap-text", label: "Hidden Text" },
         ],
+        enabledVideoModels: [
+          { channel: "cliproxy", enabled: true, id: "grok-imagine-video", label: "Grok Video" },
+        ],
+        videoModel: "cliproxy:grok-imagine-video",
       },
       headers: { cookie },
       method: "PUT",
@@ -179,7 +194,9 @@ test("admin can publish enabled model options for frontend selection", async () 
     const options = JSON.parse(optionsResponse.body);
     assert.deepEqual(options.imageModels, [{ channel: "provider", id: "flux-kontext-pro", label: "Flux Kontext" }]);
     assert.deepEqual(options.reversePromptModels, [{ channel: "provider", id: "gpt-5.5", label: "GPT 5.5" }]);
+    assert.deepEqual(options.videoModels, [{ channel: "cliproxy", id: "grok-imagine-video", label: "Grok Video" }]);
     assert.equal(options.selectedImageModel, "provider:flux-kontext-pro");
+    assert.equal(options.selectedVideoModel, "cliproxy:grok-imagine-video");
   } finally {
     await app.close();
   }
@@ -213,8 +230,10 @@ test("admin can fetch provider model catalog for local model pool editing", asyn
     assert.equal(response.statusCode, 200);
     const catalog = JSON.parse(response.body);
     assert.ok(catalog.imageModels.provider.some((model) => model.id === "gpt-image-2"));
+    assert.ok(catalog.imageModels.cliproxy.some((model) => model.id === "grok-imagine-image"));
     assert.ok(catalog.imageModels["gemini-bridge"].some((model) => model.id === "nano-banana"));
     assert.ok(catalog.reversePromptModels.codex.some((model) => model.id === "gpt-5.5"));
+    assert.ok(catalog.videoModels.cliproxy.some((model) => model.id === "grok-imagine-video"));
   } finally {
     await app.close();
   }
@@ -559,6 +578,161 @@ test("saving api settings keeps admin model pool and backend channels unchanged"
       { channel: "gemini-bridge", enabled: true, id: "nano-banana", label: "Nano Banana" },
     ]);
   } finally {
+    await app.close();
+  }
+});
+
+test("CLIProxyAPI settings can be saved without a third-party API key and keep management key private", async () => {
+  const app = await createTestApp();
+  try {
+    const user = await createUser();
+    const cookie = await sessionCookieFor(user.id);
+
+    const saveResponse = await app.inject({
+      body: {
+        cliProxyApiKey: "cliproxy-only-secret",
+        cliProxyBaseUrl: "https://cliproxy-only.example/v1",
+        cliProxyManagementKey: "cliproxy-only-management-secret",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings/cliproxy",
+    });
+
+    assert.equal(saveResponse.statusCode, 200);
+    const payload = JSON.parse(saveResponse.body);
+    assert.equal(payload.providerSetting.enabled, false);
+    assert.equal(payload.providerSetting.hasApiKey, false);
+    assert.equal(payload.providerSetting.apiKeyPreview, null);
+    assert.equal(payload.providerSetting.cliProxyBaseUrl, "https://cliproxy-only.example/v1");
+    assert.equal(payload.providerSetting.hasCliProxyApiKey, true);
+    assert.equal(payload.providerSetting.hasCliProxyManagementKey, true);
+    assert.equal(JSON.stringify(payload).includes("cliproxy-only-secret"), false);
+    assert.equal(JSON.stringify(payload).includes("cliproxy-only-management-secret"), false);
+
+    const stored = await prisma.providerSetting.findUnique({ where: { userId_provider: { provider: "openai-compatible", userId: user.id } } });
+    assert.equal(stored.cliProxyApiKey, "cliproxy-only-secret");
+    assert.equal(stored.cliProxyManagementKey, "cliproxy-only-management-secret");
+  } finally {
+    await app.close();
+  }
+});
+
+test("CLIProxyAPI OAuth start proxies official Claude management auth URL and rejects xAI management OAuth", async () => {
+  const app = await createTestApp();
+  const originalFetch = globalThis.fetch;
+  try {
+    const user = await createUser();
+    const cookie = await sessionCookieFor(user.id);
+    await app.inject({
+      body: {
+        cliProxyApiKey: "cliproxy-oauth-secret",
+        cliProxyBaseUrl: "https://cliproxy-oauth.example/v1",
+        cliProxyManagementKey: "cliproxy-management-secret",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings/cliproxy",
+    });
+
+    const requested = [];
+    globalThis.fetch = async (url, init = {}) => {
+      requested.push({
+        authorization: init.headers?.Authorization,
+        managementKey: init.headers?.["X-Management-Key"],
+        url: String(url),
+      });
+      return Response.json({ state: "state-123", url: "https://accounts.example/oauth" });
+    };
+
+    const xaiResponse = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      url: "/api/provider-settings/cliproxy/oauth/xai/start",
+    });
+    assert.equal(xaiResponse.statusCode, 400);
+    assert.match(JSON.parse(xaiResponse.body).error, /不支持/);
+    assert.equal(requested.length, 0);
+
+    const claudeResponse = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      url: "/api/provider-settings/cliproxy/oauth/anthropic/start",
+    });
+    assert.equal(claudeResponse.statusCode, 200);
+    assert.equal(JSON.parse(claudeResponse.body).url, "https://accounts.example/oauth");
+
+    assert.deepEqual(requested.map((request) => request.url), [
+      "https://cliproxy-oauth.example/v0/management/anthropic-auth-url?is_webui=true",
+    ]);
+    assert.equal(requested[0].authorization, "Bearer cliproxy-management-secret");
+    assert.equal(requested[0].managementKey, "cliproxy-management-secret");
+    assert.equal(JSON.stringify(claudeResponse.json()).includes("cliproxy-management-secret"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await app.close();
+  }
+});
+
+test("CLIProxyAPI OAuth status polls management state and requires management key", async () => {
+  const app = await createTestApp();
+  const originalFetch = globalThis.fetch;
+  const previousManagementPassword = process.env.MANAGEMENT_PASSWORD;
+  try {
+    delete process.env.MANAGEMENT_PASSWORD;
+    const user = await createUser();
+    const cookie = await sessionCookieFor(user.id);
+    await app.inject({
+      body: {
+        cliProxyApiKey: "cliproxy-status-secret",
+        cliProxyBaseUrl: "https://cliproxy-status.example/v1",
+        cliProxyManagementKey: "cliproxy-status-management-secret",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings/cliproxy",
+    });
+
+    const requested = [];
+    globalThis.fetch = async (url, init = {}) => {
+      requested.push({ authorization: init.headers?.Authorization, url: String(url) });
+      return Response.json({ status: "wait" });
+    };
+
+    const statusResponse = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/provider-settings/cliproxy/oauth/anthropic/status?state=abc-123",
+    });
+    assert.equal(statusResponse.statusCode, 200);
+    const payload = JSON.parse(statusResponse.body);
+    assert.equal(payload.provider, "anthropic");
+    assert.equal(payload.state, "abc-123");
+    assert.equal(payload.status, "wait");
+    assert.equal(requested[0].url, "https://cliproxy-status.example/v0/management/get-auth-status?state=abc-123");
+    assert.equal(requested[0].authorization, "Bearer cliproxy-status-management-secret");
+
+    await prisma.providerSetting.update({
+      data: { cliProxyManagementKey: null },
+      where: { userId_provider: { provider: "openai-compatible", userId: user.id } },
+    });
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      return Response.json({ status: "wait" });
+    };
+    const missingKeyResponse = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      url: "/api/provider-settings/cliproxy/oauth/anthropic/start",
+    });
+    assert.equal(missingKeyResponse.statusCode, 400);
+    assert.match(JSON.parse(missingKeyResponse.body).error, /管理密钥/);
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousManagementPassword === undefined) delete process.env.MANAGEMENT_PASSWORD;
+    else process.env.MANAGEMENT_PASSWORD = previousManagementPassword;
     await app.close();
   }
 });

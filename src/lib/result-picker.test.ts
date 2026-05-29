@@ -55,3 +55,21 @@ test("getResultPickerComparisonPair returns null when the source asset is missin
 
   assert.equal(getResultPickerComparisonPair(job, resultAsset, [resultAsset]), null);
 });
+
+test("video jobs keep video labels and do not compare with source images", () => {
+  const job: ResultPickerJob = {
+    id: "job-3",
+    mode: "text_to_video",
+    prompt: "make it move",
+    sourceAssetId: "source-asset",
+    results: [{ asset: { ...resultAsset, mimeType: "video/mp4" } }],
+  };
+
+  assert.deepEqual(getResultPickerSummary(job, [sourceAsset, resultAsset]), {
+    candidateCount: 1,
+    canCompareWithSource: false,
+    modeLabel: "AI 视频",
+    sourceAsset,
+  });
+  assert.equal(getResultPickerComparisonPair(job, resultAsset, [sourceAsset, resultAsset]), null);
+});

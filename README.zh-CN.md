@@ -8,37 +8,65 @@ Local AI Drawboard 是一个本地单用户 AI 图像工作台。它在你的电
 - npm 10 或更新版本
 - Python 3.10 或更新版本，仅在使用可选 Gemini Web Bridge 时需要
 
-## 第一次安装
+## 一键启动
 
-Windows PowerShell：
+Windows 拉取项目后，双击根目录里的：
 
-```powershell
-git clone https://github.com/koiyoho/local_ai_drawboard.git; cd local_ai_drawboard; npm run setup:local
+```text
+start-local.bat
 ```
 
-macOS / Linux：
+macOS / Linux 拉取项目后，在项目目录运行：
 
 ```bash
-git clone https://github.com/koiyoho/local_ai_drawboard.git && cd local_ai_drawboard && npm run setup:local
+sh start-local.sh
 ```
 
-安装脚本会自动创建本地配置、安装依赖、初始化 SQLite 数据库，并构建应用。
-
-## 启动
-
-进入项目目录后运行：
-
-```bash
-npm run start:local
-```
-
-本地使用请运行 `start:local`。它会强制启用本地单用户模式，并跳过登录页。
+它会自动检查 Node.js、安装依赖、创建本地配置、初始化数据库、构建应用，并启动本地服务。
 
 打开浏览器访问：
 
 ```text
 http://localhost:3010
 ```
+
+## 第一次安装
+
+Windows：
+
+```powershell
+git clone https://github.com/koiyoho/local_ai_drawboard.git
+cd local_ai_drawboard
+.\start-local.bat
+```
+
+macOS / Linux：
+
+```bash
+git clone https://github.com/koiyoho/local_ai_drawboard.git && cd local_ai_drawboard && sh start-local.sh
+```
+
+## 启动
+
+Windows 下次使用直接双击：
+
+```text
+start-local.bat
+```
+
+或者在终端运行：
+
+```powershell
+.\start-local.bat
+```
+
+macOS / Linux 进入项目目录后运行：
+
+```bash
+sh start-local.sh
+```
+
+本地使用会强制启用单用户模式，并跳过登录页。
 
 ## 结束
 
@@ -46,33 +74,29 @@ http://localhost:3010
 
 ## 下次使用
 
-打开终端，进入项目目录，运行：
+Windows 双击 `start-local.bat`，然后访问 `http://localhost:3010`。
 
-```bash
-npm run start:local
-```
-
-然后访问：
-
-```text
-http://localhost:3010
-```
+macOS / Linux 运行 `sh start-local.sh`，然后访问 `http://localhost:3010`。
 
 ## 更新
 
 先在运行应用的终端里按 `Ctrl+C` 停止应用，然后运行：
 
+Windows：
+
+```powershell
+git pull
+.\start-local.bat --setup
+```
+
+macOS / Linux：
+
 ```bash
 git pull
-npm run setup:local
-npm run start:local
+sh start-local.sh --setup
 ```
 
-打开浏览器访问：
-
-```text
-http://localhost:3010
-```
+更新后继续访问 `http://localhost:3010`。
 
 ## 配置 AI 接口
 

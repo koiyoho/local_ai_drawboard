@@ -7,6 +7,7 @@ import { applyUpdate, checkForUpdate, getCurrentVersion, getSystemHealth, getUpd
 
 const applyUpdateBodySchema = z.object({
   confirmedVersion: z.string().trim().min(1).optional(),
+  forceReapply: z.boolean().optional(),
 });
 
 function getApplyUpdateErrorStatus(error: unknown) {

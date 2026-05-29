@@ -10,37 +10,65 @@ Local AI Drawboard is a local single-user AI image workspace. It runs on your ow
 - npm 10 or newer
 - Python 3.10 or newer only if you use the optional Gemini Web Bridge
 
-## First-Time Setup
+## One-Click Start
 
-Windows PowerShell:
+On Windows, double-click this file in the project folder:
 
-```powershell
-git clone https://github.com/koiyoho/local_ai_drawboard.git; cd local_ai_drawboard; npm run setup:local
+```text
+start-local.bat
 ```
 
-macOS / Linux:
+On macOS / Linux, run this from the project folder:
 
 ```bash
-git clone https://github.com/koiyoho/local_ai_drawboard.git && cd local_ai_drawboard && npm run setup:local
+sh start-local.sh
 ```
 
-The setup command creates local config, installs dependencies, initializes the SQLite database, and builds the app.
-
-## Start
-
-Run this from the project folder:
-
-```bash
-npm run start:local
-```
-
-Use `start:local` for local use. It forces single-user local mode and skips the login page.
+It checks Node.js, installs dependencies, creates local config, initializes the database, builds the app, and starts the local service.
 
 Open:
 
 ```text
 http://localhost:3010
 ```
+
+## First-Time Setup
+
+Windows:
+
+```powershell
+git clone https://github.com/koiyoho/local_ai_drawboard.git
+cd local_ai_drawboard
+.\start-local.bat
+```
+
+macOS / Linux:
+
+```bash
+git clone https://github.com/koiyoho/local_ai_drawboard.git && cd local_ai_drawboard && sh start-local.sh
+```
+
+## Start
+
+On Windows, double-click:
+
+```text
+start-local.bat
+```
+
+Or run:
+
+```powershell
+.\start-local.bat
+```
+
+On macOS / Linux, run this from the project folder:
+
+```bash
+sh start-local.sh
+```
+
+Local startup forces single-user mode and skips the login page.
 
 ## Stop
 
@@ -48,33 +76,29 @@ Press `Ctrl+C` in the terminal running the app.
 
 ## Next Time
 
-Open a terminal in the project folder and run:
+On Windows, double-click `start-local.bat`, then open `http://localhost:3010`.
 
-```bash
-npm run start:local
-```
-
-Then open:
-
-```text
-http://localhost:3010
-```
+On macOS / Linux, run `sh start-local.sh`, then open `http://localhost:3010`.
 
 ## Update
 
 Stop the app with `Ctrl+C`, then run:
 
+Windows:
+
+```powershell
+git pull
+.\start-local.bat --setup
+```
+
+macOS / Linux:
+
 ```bash
 git pull
-npm run setup:local
-npm run start:local
+sh start-local.sh --setup
 ```
 
-Open:
-
-```text
-http://localhost:3010
-```
+Then open `http://localhost:3010`.
 
 ## Configure AI
 

@@ -44,3 +44,24 @@ test("board model selection uses shared provider routing helpers", () => {
   assert.match(source, /getProviderModelOptionValue\(model\)/);
   assert.doesNotMatch(source, /getImageModelOptionValue/);
 });
+
+test("video assets are not inserted as image canvas layers", () => {
+  assert.match(source, /if \(!asset\.mimeType\.startsWith\("image\/"\)\) \{/);
+  assert.match(source, /throw new Error\("视频已保存到素材库，不能作为图片图层载入画布"\)/);
+  assert.match(source, /const isImageAsset = asset\.mimeType\.startsWith\("image\/"\)/);
+  assert.match(source, /disabled=\{!isImageAsset\}/);
+  assert.match(source, /asset\.mimeType\.startsWith\("video\/"\) \? \(/);
+});
+
+test("generation polling exits when a job is cancelled", () => {
+  assert.match(source, /if \(payload\.job\.status === "cancelled"\) \{/);
+  assert.match(source, /throw new Error\(payload\.job\.errorMessage \?\? "生成任务已中止"\)/);
+});
+
+test("video jobs keep video labels and retry through the video endpoint", () => {
+  assert.match(source, /function getGenerationModeLabel\(mode: string\)/);
+  assert.match(source, /if \(mode === "text_to_video"\) return "AI 视频"/);
+  assert.match(source, /if \(job\.mode === "text_to_video"\) \{/);
+  assert.match(source, /runVideoGeneration\(\{/);
+  assert.doesNotMatch(source, /modeLabel: latestGenerationJob\.mode === "text_to_image" \? "AI 生图" : "AI 改图"/);
+});

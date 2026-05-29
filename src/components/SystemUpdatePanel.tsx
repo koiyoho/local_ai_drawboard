@@ -48,13 +48,13 @@ export function SystemUpdatePanel() {
     }
   }
 
-  async function applyLatestUpdate() {
+  async function applyLatestUpdate(options: { forceReapply?: boolean } = {}) {
     if (!payload?.manifest) return;
     setIsApplying(true);
     setError("");
     try {
       const result = await apiJson<{ jobId: string }>("/api/system/update/apply", {
-        body: JSON.stringify({ confirmedVersion: payload.manifest.version }),
+        body: JSON.stringify({ confirmedVersion: payload.manifest.version, forceReapply: options.forceReapply }),
         method: "POST",
       });
       const nextJob = await apiJson<UpdateJobResponse>(`/api/system/update/jobs/${result.jobId}`);
@@ -93,6 +93,13 @@ export function SystemUpdatePanel() {
   const current = payload?.current;
   const manifest = payload?.manifest;
   const canApply = Boolean(payload?.updateAvailable && manifest && manifest.migrationMode !== "manual_required");
+  const canReapplyCurrent = Boolean(
+    payload
+    && !payload.updateAvailable
+    && manifest
+    && current?.version === manifest.version
+    && manifest.migrationMode !== "manual_required",
+  );
 
   return (
     <section className="admin-card" id="system-update">
@@ -154,12 +161,19 @@ export function SystemUpdatePanel() {
             <p className="form-hint">
               {payload.updateAvailable
                 ? "检测到新版本。升级会先下载并校验发布包，服务重启期间页面可能短暂断开。"
-                : payload.reason ?? "当前已是最新版本。"}
+                : canReapplyCurrent
+                  ? "当前已是最新版本。如本地文件或依赖状态异常，可重新应用当前发布包。"
+                  : payload.reason ?? "当前已是最新版本。"}
             </p>
           ) : null}
           {payload?.updateAvailable ? (
             <button disabled={!canApply || isApplying} onClick={() => void applyLatestUpdate()} type="button">
               {isApplying ? "启动中" : manifest?.migrationMode === "manual_required" ? "需要手动升级" : "下载并升级"}
+            </button>
+          ) : null}
+          {canReapplyCurrent ? (
+            <button disabled={isApplying} onClick={() => void applyLatestUpdate({ forceReapply: true })} type="button">
+              {isApplying ? "启动中" : "重新应用当前发布包"}
             </button>
           ) : null}
         </>

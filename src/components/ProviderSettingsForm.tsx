@@ -6,11 +6,12 @@ import {
   IconCollapseDown,
   IconCollapseUp,
   IconCopy,
+  IconRefresh,
   IconPlus,
   IconSave,
   IconDelete,
 } from "@/components/ui/icons";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { apiFetch } from "@/lib/api-client";
 import {
@@ -21,9 +22,11 @@ import {
   parseConfiguredModelValue,
   providerImageModelCatalog,
   providerReversePromptModelCatalog,
+  providerVideoModelCatalog,
   type ConfiguredProviderModel,
   type ProviderModelCatalog,
   type ProviderModelChannel,
+  type ProviderVideoModelCatalog,
 } from "@/lib/provider-models";
 
 export type ProviderSettingPayload = {
@@ -31,19 +34,72 @@ export type ProviderSettingPayload = {
   provider: string;
   displayName: string;
   baseUrl: string | null;
+  cliProxyBaseUrl: string | null;
   imageModel: string;
   textModel: string;
+  videoModel: string;
   enabledImageModels: ConfiguredProviderModel[];
   enabledReversePromptModels: ConfiguredProviderModel[];
+  enabledVideoModels: ConfiguredProviderModel[];
   enabled: boolean;
   hasApiKey: boolean;
   apiKeyPreview: string | null;
+  hasCliProxyApiKey: boolean;
+  cliProxyApiKeyPreview: string | null;
+  hasCliProxyManagementKey: boolean;
+  cliProxyManagementKeyPreview: string | null;
+  cliProxyEnvironmentBaseUrl: string | null;
+  cliProxyEnvironmentHasApiKey: boolean;
+  cliProxyEnvironmentHasManagementKey: boolean;
   updatedAt: string;
 };
 
 export type ProviderSettingHistoryPayload = Omit<ProviderSettingPayload, "enabled" | "hasApiKey"> & {
   apiKeyPreview: string | null;
 };
+
+type CliProxyDiagnosticCheck = {
+  label: string;
+  message: string;
+  status: "ok" | "error" | "not_configured";
+  target: string;
+};
+
+type CliProxyDiagnosticPayload = {
+  checkedAt: string;
+  checks: CliProxyDiagnosticCheck[];
+  overall: "ok" | "error" | "not_configured";
+  summary: string;
+};
+
+type CliProxyInitializationPayload = {
+  apiKeyPreview: string | null;
+  apiKeySyncMessage: string;
+  apiKeySyncStatus: "ok" | "skipped" | "warning";
+  baseUrl: string;
+  generatedApiKey: boolean;
+  generatedBaseUrl: boolean;
+  hasApiKey: boolean;
+};
+
+type CliProxyOAuthProvider = "gemini-cli" | "codex" | "anthropic" | "antigravity";
+type CliProxyOAuthStatus = "idle" | "opening" | "wait" | "ok" | "error";
+type CliProxyOAuthState = {
+  errorMessage?: string;
+  state?: string;
+  status: CliProxyOAuthStatus;
+};
+
+const cliProxyOAuthProviders: Array<{
+  description: string;
+  provider: CliProxyOAuthProvider;
+  title: string;
+}> = [
+  { provider: "gemini-cli", title: "Gemini CLI", description: "通过 CLIProxyAPI 管理端启动 Gemini CLI OAuth。" },
+  { provider: "codex", title: "OpenAI Codex", description: "通过 CLIProxyAPI 管理端启动 Codex OAuth。" },
+  { provider: "anthropic", title: "Claude Code", description: "通过 CLIProxyAPI 管理端启动 Anthropic / Claude Code OAuth。" },
+  { provider: "antigravity", title: "Antigravity", description: "通过 CLIProxyAPI 管理端启动 Antigravity OAuth。" },
+];
 
 export function ProviderSettingsForm({
   initialHistories,
@@ -61,6 +117,8 @@ export function ProviderSettingsForm({
   const [displayName, setDisplayName] = useState(initialSetting?.displayName ?? "OpenAI 兼容接口");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(initialSetting?.baseUrl ?? "");
+  const [cliProxyApiKey, setCliProxyApiKey] = useState("");
+  const [cliProxyBaseUrl, setCliProxyBaseUrl] = useState(initialSetting?.cliProxyBaseUrl ?? "");
   const [imageModel, setImageModel] = useState(initialSetting?.imageModel ?? "gpt-image-2");
   const [textModel, setTextModel] = useState(initialSetting?.textModel ?? "gpt-5.5");
   const [setting, setSetting] = useState(initialSetting);
@@ -89,6 +147,8 @@ export function ProviderSettingsForm({
         body: JSON.stringify({
           apiKey,
           baseUrl,
+          cliProxyApiKey,
+          cliProxyBaseUrl,
           displayName,
           imageModel,
           textModel,
@@ -102,6 +162,7 @@ export function ProviderSettingsForm({
       applySettingToForm(payload.providerSetting);
       setHistories(payload.histories ?? []);
       setApiKey("");
+      setCliProxyApiKey("");
       setStatus("API 设置已保存");
     });
   }
@@ -122,6 +183,7 @@ export function ProviderSettingsForm({
       applySettingToForm(payload.providerSetting);
       setHistories(payload.histories ?? []);
       setApiKey("");
+      setCliProxyApiKey("");
       setStatus("已复用历史 API 设置");
     });
   }
@@ -147,6 +209,7 @@ export function ProviderSettingsForm({
     }
     setDisplayName(nextSetting.displayName);
     setBaseUrl(nextSetting.baseUrl ?? "");
+    setCliProxyBaseUrl(nextSetting.cliProxyBaseUrl ?? "");
     setImageModel(nextSetting.imageModel);
     setTextModel(nextSetting.textModel);
   }
@@ -213,6 +276,35 @@ export function ProviderSettingsForm({
               </span>
             </label>
           </div>
+          <div className="provider-cliproxy-panel">
+            <div className="provider-subsection-title">
+              <h3>CLIProxyAPI</h3>
+              <span>{setting?.cliProxyBaseUrl ? "已配置独立通道" : "未配置"}</span>
+            </div>
+            <p className="provider-field-hint">
+              Grok 生图和视频模型使用这里的 Base URL 与 API Key，不复用上方第三方 API 地址。
+            </p>
+            <div className="provider-grid">
+              <label>
+                CLIProxyAPI Base URL
+                <input
+                  onChange={(event) => setCliProxyBaseUrl(event.target.value)}
+                  placeholder="https://cliproxy.example.com/v1"
+                  value={cliProxyBaseUrl}
+                />
+              </label>
+              <label>
+                CLIProxyAPI Key
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setCliProxyApiKey(event.target.value)}
+                  placeholder={setting?.cliProxyApiKeyPreview ? `当前 ${setting.cliProxyApiKeyPreview}` : "可留空使用服务端环境变量"}
+                  type="password"
+                  value={cliProxyApiKey}
+                />
+              </label>
+            </div>
+          </div>
           <div className="provider-actions">
             <button
               disabled={isPending || (!setting?.hasApiKey && !apiKey.trim())}
@@ -250,6 +342,315 @@ export function ProviderSettingsForm({
   );
 }
 
+export function CliProxySettingsCard({
+  initialSetting,
+  onSettingChange,
+}: {
+  initialSetting: ProviderSettingPayload | null;
+  onSettingChange?: (setting: ProviderSettingPayload | null) => void;
+}) {
+  const [setting, setSetting] = useState(initialSetting);
+  const [cliProxyApiKey, setCliProxyApiKey] = useState("");
+  const [cliProxyManagementKey, setCliProxyManagementKey] = useState("");
+  const [cliProxyBaseUrl, setCliProxyBaseUrl] = useState(initialSetting?.cliProxyBaseUrl ?? "");
+  const [diagnostics, setDiagnostics] = useState<CliProxyDiagnosticPayload | null>(null);
+  const [initializationStatus, setInitializationStatus] = useState<CliProxyInitializationPayload | null>(null);
+  const [oauthStates, setOauthStates] = useState<Record<CliProxyOAuthProvider, CliProxyOAuthState>>(() => createInitialCliProxyOAuthStates());
+  const [status, setStatus] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const oauthPollersRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    setSetting(initialSetting);
+    setCliProxyBaseUrl(initialSetting?.cliProxyBaseUrl ?? "");
+  }, [initialSetting]);
+
+  useEffect(() => () => {
+    Object.values(oauthPollersRef.current).forEach((poller) => window.clearInterval(poller));
+    oauthPollersRef.current = {};
+  }, []);
+
+  const hasSavedBaseUrl = Boolean(setting?.cliProxyBaseUrl);
+  const hasEnvBaseUrl = Boolean(setting?.cliProxyEnvironmentBaseUrl);
+  const hasSavedKey = Boolean(setting?.hasCliProxyApiKey);
+  const hasEnvKey = Boolean(setting?.cliProxyEnvironmentHasApiKey);
+  const hasSavedManagementKey = Boolean(setting?.hasCliProxyManagementKey);
+  const hasEnvManagementKey = Boolean(setting?.cliProxyEnvironmentHasManagementKey);
+  const hasCliProxyConfig = hasSavedBaseUrl || hasEnvBaseUrl;
+  const hasCliProxyOAuthConfig = hasCliProxyConfig && (hasSavedManagementKey || hasEnvManagementKey);
+  const baseUrlStatus = hasSavedBaseUrl
+    ? `用户已保存：${setting?.cliProxyBaseUrl}`
+    : hasEnvBaseUrl
+      ? `服务端已配置：${setting?.cliProxyEnvironmentBaseUrl}`
+      : "未配置";
+  const keyStatus = hasSavedKey
+    ? `用户已保存：${setting?.cliProxyApiKeyPreview ?? "已保存"}`
+    : hasEnvKey
+      ? "服务端已配置环境变量"
+      : "未配置";
+  const managementKeyStatus = hasSavedManagementKey
+    ? `用户已保存：${setting?.cliProxyManagementKeyPreview ?? "已保存"}`
+    : hasEnvManagementKey
+      ? "服务端已配置环境变量"
+      : "未配置";
+
+  function saveCliProxySetting() {
+    startTransition(async () => {
+      setStatus("");
+      const response = await apiFetch("/api/provider-settings/cliproxy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliProxyApiKey, cliProxyBaseUrl, cliProxyManagementKey }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; providerSetting?: ProviderSettingPayload };
+      if (!response.ok || !payload.providerSetting) {
+        setStatus(payload.error ?? "无法保存 CLIProxyAPI 设置");
+        return;
+      }
+      setSetting(payload.providerSetting);
+      onSettingChange?.(payload.providerSetting);
+      setCliProxyApiKey("");
+      setCliProxyManagementKey("");
+      setCliProxyBaseUrl(payload.providerSetting.cliProxyBaseUrl ?? "");
+      setStatus("CLIProxyAPI 设置已保存");
+    });
+  }
+
+  function initializeCliProxy(rotateApiKey = false) {
+    startTransition(async () => {
+      setStatus("");
+      const response = await apiFetch("/api/provider-settings/cliproxy/initialize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rotateApiKey }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        initialization?: CliProxyInitializationPayload;
+        providerSetting?: ProviderSettingPayload;
+      };
+      if (!response.ok || !payload.providerSetting || !payload.initialization) {
+        setStatus(payload.error ?? "无法初始化 CLIProxyAPI");
+        return;
+      }
+      setSetting(payload.providerSetting);
+      onSettingChange?.(payload.providerSetting);
+      setCliProxyApiKey("");
+      setCliProxyManagementKey("");
+      setCliProxyBaseUrl(payload.providerSetting.cliProxyBaseUrl ?? payload.initialization.baseUrl);
+      setInitializationStatus(payload.initialization);
+      setStatus(`${rotateApiKey ? "CLIProxyAPI API Key 已轮换" : "CLIProxyAPI 已初始化"}；${payload.initialization.apiKeySyncMessage}`);
+    });
+  }
+
+  function checkCliProxyDiagnostics() {
+    startTransition(async () => {
+      setStatus("");
+      const response = await apiFetch("/api/provider-settings/cliproxy/diagnostics", { method: "POST" });
+      const payload = (await response.json().catch(() => ({}))) as Partial<CliProxyDiagnosticPayload> & { error?: string };
+      if (!response.ok || !payload.overall || !payload.checks) {
+        setStatus(payload.error ?? "无法验证 CLIProxyAPI");
+        return;
+      }
+      setDiagnostics(payload as CliProxyDiagnosticPayload);
+      setStatus(payload.summary ?? "CLIProxyAPI 自检完成");
+    });
+  }
+
+  function startCliProxyOAuth(providerName: CliProxyOAuthProvider) {
+    if (!hasCliProxyOAuthConfig) {
+      setStatus("请先保存 CLIProxyAPI Base URL 和管理密钥。管理密钥是 MANAGEMENT_PASSWORD，不是 /v1 调用 API Key。");
+      return;
+    }
+    startTransition(async () => {
+      setStatus("");
+      setOauthStates((current) => ({ ...current, [providerName]: { status: "opening" } }));
+      const response = await apiFetch(`/api/provider-settings/cliproxy/oauth/${providerName}/start`, { method: "POST" });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; state?: string; url?: string };
+      if (!response.ok || !payload.url || !payload.state) {
+        const errorMessage = payload.error ?? "无法启动 CLIProxyAPI OAuth 登录";
+        setOauthStates((current) => ({ ...current, [providerName]: { errorMessage, status: "error" } }));
+        setStatus(errorMessage);
+        return;
+      }
+      const opened = window.open(payload.url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        const errorMessage = "浏览器阻止了授权窗口，请允许弹窗后重试";
+        setOauthStates((current) => ({ ...current, [providerName]: { errorMessage, state: payload.state, status: "error" } }));
+        setStatus(errorMessage);
+        return;
+      }
+      setOauthStates((current) => ({ ...current, [providerName]: { state: payload.state, status: "wait" } }));
+      setStatus(`${getCliProxyOAuthProviderTitle(providerName)} 授权窗口已打开，等待 CLIProxyAPI 返回登录状态`);
+      beginCliProxyOAuthPolling(providerName, payload.state);
+    });
+  }
+
+  function beginCliProxyOAuthPolling(providerName: CliProxyOAuthProvider, state: string) {
+    const pollerKey = `${providerName}:${state}`;
+    if (oauthPollersRef.current[pollerKey]) window.clearInterval(oauthPollersRef.current[pollerKey]);
+    let attempts = 0;
+    const poll = async () => {
+      attempts += 1;
+      const response = await apiFetch(`/api/provider-settings/cliproxy/oauth/${providerName}/status?state=${encodeURIComponent(state)}`);
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; errorMessage?: string; status?: "ok" | "wait" | "error" };
+      if (!response.ok || payload.status === "error") {
+        window.clearInterval(oauthPollersRef.current[pollerKey]);
+        delete oauthPollersRef.current[pollerKey];
+        const errorMessage = payload.errorMessage ?? payload.error ?? "CLIProxyAPI OAuth 登录失败";
+        setOauthStates((current) => ({ ...current, [providerName]: { errorMessage, state, status: "error" } }));
+        setStatus(errorMessage);
+        return;
+      }
+      if (payload.status === "ok") {
+        window.clearInterval(oauthPollersRef.current[pollerKey]);
+        delete oauthPollersRef.current[pollerKey];
+        setOauthStates((current) => ({ ...current, [providerName]: { state, status: "ok" } }));
+        setStatus(`${getCliProxyOAuthProviderTitle(providerName)} 已完成登录`);
+        return;
+      }
+      if (attempts >= 60) {
+        window.clearInterval(oauthPollersRef.current[pollerKey]);
+        delete oauthPollersRef.current[pollerKey];
+        setOauthStates((current) => ({ ...current, [providerName]: { errorMessage: "等待授权超时，请重新发起登录", state, status: "error" } }));
+        setStatus("等待授权超时，请重新发起登录");
+      }
+    };
+    oauthPollersRef.current[pollerKey] = window.setInterval(() => void poll(), 2000);
+    void poll();
+  }
+
+  return (
+    <section className="provider-settings cliproxy-settings-card" id="cliproxy-settings">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">CLIProxyAPI</p>
+          <h2>模型路由与 CLI 登录</h2>
+        </div>
+        <div className="provider-title-actions">
+          <span className={hasCliProxyConfig ? "provider-badge is-enabled" : "provider-badge"}>
+            {hasSavedBaseUrl ? "用户已保存" : hasEnvBaseUrl ? "服务端已配置" : "未配置"}
+          </span>
+        </div>
+      </div>
+      <p className="provider-field-hint">
+        CLIProxyAPI 负责 Grok、Claude、Codex、Gemini CLI、Antigravity 等本机代理通道；这里与普通 OpenAI 兼容 API 分开保存。
+      </p>
+      <div className="settings-summary cliproxy-source-summary">
+        <span>Base URL 来源</span>
+        <strong>{baseUrlStatus}</strong>
+        <small>API Key 来源</small>
+        <em>{keyStatus}</em>
+        <small>管理密钥来源</small>
+        <em>{managementKeyStatus}</em>
+      </div>
+      {initializationStatus ? (
+        <div className={`cliproxy-init-status is-${initializationStatus.apiKeySyncStatus}`} aria-label="CLIProxyAPI 初始化状态">
+          <div>
+            <span>api-keys 同步</span>
+            <strong>{getCliProxySyncStatusLabel(initializationStatus.apiKeySyncStatus)}</strong>
+          </div>
+          <p>{initializationStatus.apiKeySyncMessage}</p>
+          <small>
+            Base URL：{initializationStatus.baseUrl}
+            {initializationStatus.apiKeyPreview ? ` · API Key：${initializationStatus.apiKeyPreview}` : ""}
+          </small>
+        </div>
+      ) : null}
+      <div className="provider-grid">
+        <label>
+          CLIProxyAPI Base URL
+          <input
+            onChange={(event) => setCliProxyBaseUrl(event.target.value)}
+            placeholder={setting?.cliProxyEnvironmentBaseUrl ? `服务端 ${setting.cliProxyEnvironmentBaseUrl}` : "http://127.0.0.1:8327/v1"}
+            value={cliProxyBaseUrl}
+          />
+          <span className="provider-field-hint">本地默认端口通常是 8327，模型调用地址需要填写到 /v1。</span>
+        </label>
+        <label>
+          CLIProxyAPI /v1 调用 API Key
+          <input
+            autoComplete="off"
+            onChange={(event) => setCliProxyApiKey(event.target.value)}
+            placeholder={hasSavedKey ? `当前 ${setting?.cliProxyApiKeyPreview}` : hasEnvKey ? "服务端已配置，可留空" : "可留空使用服务端环境变量"}
+            type="password"
+            value={cliProxyApiKey}
+          />
+          <span className="provider-field-hint">用于 OpenAI-compatible /v1 模型调用和模型列表鉴权。</span>
+        </label>
+        <label>
+          CLIProxyAPI 管理密钥
+          <input
+            autoComplete="off"
+            onChange={(event) => setCliProxyManagementKey(event.target.value)}
+            placeholder={hasSavedManagementKey ? `当前 ${setting?.cliProxyManagementKeyPreview}` : hasEnvManagementKey ? "服务端已配置，可留空" : "填写 MANAGEMENT_PASSWORD"}
+            type="password"
+            value={cliProxyManagementKey}
+          />
+          <span className="provider-field-hint">用于 /v0/management 管理路由、api-keys 同步和官方 OAuth 登录。</span>
+        </label>
+      </div>
+      <div className="provider-actions">
+        <button disabled={isPending || (!cliProxyBaseUrl.trim() && !hasEnvBaseUrl)} onClick={saveCliProxySetting} type="button">
+          <AppIcon icon={IconSave} size="md" />
+          保存 CLIProxyAPI
+        </button>
+        <button disabled={isPending} onClick={() => initializeCliProxy(false)} type="button">
+          <AppIcon icon={IconApiKey} size="md" />
+          初始化本地配置
+        </button>
+        <button className="secondary-action" disabled={isPending} onClick={() => initializeCliProxy(true)} type="button">
+          <AppIcon icon={IconRefresh} size="md" />
+          轮换 API Key
+        </button>
+        <button className="secondary-action" disabled={isPending || !hasCliProxyConfig} onClick={checkCliProxyDiagnostics} type="button">
+          <AppIcon icon={IconRefresh} size="md" />
+          自检
+        </button>
+      </div>
+      <div className="cliproxy-auth-panel">
+        <div className="provider-subsection-title">
+          <h3>官方管理 OAuth</h3>
+          <span>{hasCliProxyOAuthConfig ? "可发起" : "需要管理密钥"}</span>
+        </div>
+        <div className="cliproxy-auth-grid is-compact">
+          {cliProxyOAuthProviders.map(({ description, provider: providerName, title }) => (
+            <article key={providerName}>
+              <strong>{title}</strong>
+              <span>{description}</span>
+              <small>{getCliProxyOAuthStatusText(oauthStates[providerName])}</small>
+              <button disabled={isPending || !hasCliProxyOAuthConfig || oauthStates[providerName]?.status === "wait" || oauthStates[providerName]?.status === "opening"} onClick={() => startCliProxyOAuth(providerName)} type="button">
+                {oauthStates[providerName]?.status === "wait" ? "等待授权" : oauthStates[providerName]?.status === "opening" ? "打开中" : "开始登录"}
+              </button>
+            </article>
+          ))}
+        </div>
+        <div className="cliproxy-auth-command">
+          <span>Grok / xAI</span>
+          <code>./cli-proxy-api --xai-login</code>
+          <em>当前 CLIProxyAPI 文档未提供 xAI 的管理 OAuth auth-url；请在 CLIProxyAPI 本机进程执行登录命令，登录完成后仍通过本页的 /v1 Base URL 和模型池路由调用 Grok 图像、视频模型。</em>
+        </div>
+      </div>
+      {diagnostics ? (
+        <div className="cliproxy-diagnostics" aria-label="CLIProxyAPI 自检结果">
+          <div className="provider-subsection-title">
+            <h3>自检结果</h3>
+            <span>{diagnostics.summary}</span>
+          </div>
+          {diagnostics.checks.map((check) => (
+            <div className={`cliproxy-diagnostic-row is-${check.status}`} key={`${check.label}-${check.target}`}>
+              <strong>{check.label}</strong>
+              <span>{check.message}</span>
+              <em>{check.target}</em>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {status ? <span className="muted">{status}</span> : null}
+    </section>
+  );
+}
+
 export function ProviderModelPoolSettings({
   initialSetting,
   isExpanded,
@@ -264,23 +665,29 @@ export function ProviderModelPoolSettings({
   const [setting, setSetting] = useState(initialSetting);
   const [imageModel, setImageModel] = useState(initialSetting?.imageModel ?? "gpt-image-2");
   const [textModel, setTextModel] = useState(initialSetting?.textModel ?? "gpt-5.5");
+  const [videoModel, setVideoModel] = useState(initialSetting?.videoModel ?? "cliproxy:grok-imagine-video");
   const [imageModels, setImageModels] = useState<ConfiguredProviderModel[]>(getInitialImageModels(initialSetting));
   const [reversePromptModels, setReversePromptModels] = useState<ConfiguredProviderModel[]>(getInitialReversePromptModels(initialSetting));
+  const [videoModels, setVideoModels] = useState<ConfiguredProviderModel[]>(getInitialVideoModels(initialSetting));
   const [modelCatalog, setModelCatalog] = useState<{
     imageModels: ProviderModelCatalog;
     reversePromptModels: ProviderModelCatalog;
-  }>({ imageModels: providerImageModelCatalog, reversePromptModels: providerReversePromptModelCatalog });
+    videoModels: ProviderVideoModelCatalog;
+  }>({ imageModels: providerImageModelCatalog, reversePromptModels: providerReversePromptModelCatalog, videoModels: providerVideoModelCatalog });
   const [status, setStatus] = useState("");
   const [isPending, startTransition] = useTransition();
   const imageEnabledCount = imageModels.filter((model) => model.enabled).length;
   const textEnabledCount = reversePromptModels.filter((model) => model.enabled).length;
+  const videoEnabledCount = videoModels.filter((model) => model.enabled).length;
 
   useEffect(() => {
     setSetting(initialSetting);
     setImageModel(initialSetting?.imageModel ?? "gpt-image-2");
     setTextModel(initialSetting?.textModel ?? "gpt-5.5");
+    setVideoModel(initialSetting?.videoModel ?? "cliproxy:grok-imagine-video");
     setImageModels(getInitialImageModels(initialSetting));
     setReversePromptModels(getInitialReversePromptModels(initialSetting));
+    setVideoModels(getInitialVideoModels(initialSetting));
   }, [initialSetting?.id, initialSetting?.updatedAt]);
 
   useEffect(() => {
@@ -293,6 +700,7 @@ export function ProviderModelPoolSettings({
           setModelCatalog({
             imageModels: payload.imageModels,
             reversePromptModels: payload.reversePromptModels,
+            videoModels: payload.videoModels ?? providerVideoModelCatalog,
           });
         }
       })
@@ -311,8 +719,10 @@ export function ProviderModelPoolSettings({
         body: JSON.stringify({
           enabledImageModels: imageModels,
           enabledReversePromptModels: reversePromptModels,
+          enabledVideoModels: videoModels,
           imageModel,
           textModel,
+          videoModel,
         }),
       });
       const payload = await response.json();
@@ -324,8 +734,10 @@ export function ProviderModelPoolSettings({
       onSettingChange?.(payload.providerSetting);
       setImageModel(payload.providerSetting.imageModel);
       setTextModel(payload.providerSetting.textModel);
+      setVideoModel(payload.providerSetting.videoModel);
       setImageModels(getInitialImageModels(payload.providerSetting));
       setReversePromptModels(getInitialReversePromptModels(payload.providerSetting));
+      setVideoModels(getInitialVideoModels(payload.providerSetting));
       setStatus("模型池和调用通道已保存");
     });
   }
@@ -339,7 +751,7 @@ export function ProviderModelPoolSettings({
         </div>
         <div className="provider-title-actions">
           <span className={setting?.enabled ? "provider-badge is-enabled" : "provider-badge"}>
-            {setting?.enabled ? `${imageEnabledCount + textEnabledCount} 个已启用` : "需先保存 API"}
+            {setting?.enabled ? `${imageEnabledCount + textEnabledCount + videoEnabledCount} 个已启用` : "需先保存 API"}
           </span>
           <button
             aria-controls="provider-model-pool-body"
@@ -355,7 +767,7 @@ export function ProviderModelPoolSettings({
       {!isExpanded ? (
         <p className="provider-collapsed-summary">
           {setting?.enabled
-            ? `生图/改图 ${imageEnabledCount} 个 · 反推/提示词 ${textEnabledCount} 个 · 本地调用通道已配置`
+            ? `生图/改图 ${imageEnabledCount} 个 · 视频 ${videoEnabledCount} 个 · 反推/提示词 ${textEnabledCount} 个 · 本地调用通道已配置`
             : "先保存第三方 API 设置后，再配置前台可见模型和后台调用通道。"}
         </p>
       ) : (
@@ -370,6 +782,14 @@ export function ProviderModelPoolSettings({
             models={imageModels}
             onFallbackModelChange={setImageModel}
             onModelsChange={setImageModels}
+          />
+          <ModelListEditor
+            catalog={modelCatalog.videoModels as ProviderModelCatalog}
+            fallbackModel={videoModel}
+            label="视频生成模型"
+            models={videoModels}
+            onFallbackModelChange={setVideoModel}
+            onModelsChange={setVideoModels}
           />
           <ModelListEditor
             catalog={modelCatalog.reversePromptModels}
@@ -428,7 +848,7 @@ function ProviderHistoryList({
           </span>
           <span>
             <strong>{history.imageModel}</strong>
-            <em>{history.apiKeyPreview ?? "已保存"}</em>
+            <em>{history.apiKeyPreview ?? history.cliProxyApiKeyPreview ?? "已保存"}</em>
           </span>
         </button>
       ))}
@@ -544,6 +964,7 @@ function ModelListEditor({
                 <option value="provider">第三方 API</option>
                 <option value="codex">Codex 代理</option>
                 <option value="gemini-bridge">Gemini Bridge</option>
+                <option value="cliproxy">CLIProxyAPI</option>
               </select>
             </label>
             <label>
@@ -590,13 +1011,13 @@ function ModelListEditor({
 }
 
 function getCatalogPresets(catalog: ProviderModelCatalog): ConfiguredProviderModel[] {
-  return (["provider", "codex", "gemini-bridge"] as ProviderModelChannel[]).flatMap((channel) =>
-    catalog[channel].map((model) => ({ ...model, channel, enabled: true })),
+  return (["provider", "codex", "gemini-bridge", "cliproxy"] as ProviderModelChannel[]).flatMap((channel) =>
+    (catalog[channel] ?? []).map((model) => ({ ...model, channel, enabled: true })),
   );
 }
 
 function getCatalogOption(catalog: ProviderModelCatalog, channel: ProviderModelChannel | undefined, id: string) {
-  return catalog[channel ?? defaultProviderModelChannel].find((model) => model.id === id);
+  return (catalog[channel ?? defaultProviderModelChannel] ?? []).find((model) => model.id === id);
 }
 
 function getFallbackModelOptions(catalog: ProviderModelCatalog, models: ConfiguredProviderModel[]) {
@@ -643,4 +1064,36 @@ function getInitialReversePromptModels(setting: ProviderSettingPayload | null): 
   if (setting?.enabledReversePromptModels?.length) return setting.enabledReversePromptModels;
   const fallback = setting?.textModel ?? "gpt-5.5";
   return [{ channel: defaultProviderModelChannel, enabled: true, id: fallback, label: fallback }];
+}
+
+function getInitialVideoModels(setting: ProviderSettingPayload | null): ConfiguredProviderModel[] {
+  if (setting?.enabledVideoModels?.length) return setting.enabledVideoModels;
+  const fallback = setting?.videoModel ?? "cliproxy:grok-imagine-video";
+  const parsedFallback = parseConfiguredModelValue(fallback);
+  return [{ channel: parsedFallback.channel ?? "cliproxy", enabled: true, id: parsedFallback.id, label: parsedFallback.id }];
+}
+
+function createInitialCliProxyOAuthStates(): Record<CliProxyOAuthProvider, CliProxyOAuthState> {
+  return cliProxyOAuthProviders.reduce((states, provider) => {
+    states[provider.provider] = { status: "idle" };
+    return states;
+  }, {} as Record<CliProxyOAuthProvider, CliProxyOAuthState>);
+}
+
+function getCliProxyOAuthStatusText(state: CliProxyOAuthState | undefined) {
+  if (!state || state.status === "idle") return "未开始";
+  if (state.status === "opening") return "正在打开授权窗口";
+  if (state.status === "wait") return "等待授权完成";
+  if (state.status === "ok") return "已登录";
+  return state.errorMessage ? `失败：${state.errorMessage}` : "登录失败";
+}
+
+function getCliProxyOAuthProviderTitle(providerName: CliProxyOAuthProvider) {
+  return cliProxyOAuthProviders.find((provider) => provider.provider === providerName)?.title ?? providerName;
+}
+
+function getCliProxySyncStatusLabel(status: CliProxyInitializationPayload["apiKeySyncStatus"]) {
+  if (status === "ok") return "已同步";
+  if (status === "skipped") return "已跳过";
+  return "需要确认";
 }

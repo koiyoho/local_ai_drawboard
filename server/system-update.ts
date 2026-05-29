@@ -76,6 +76,7 @@ export type UpdateJobState = {
 
 export type ApplyUpdateInput = {
   confirmedVersion?: string;
+  forceReapply?: boolean;
 };
 
 const updateRoot = path.join(process.cwd(), "tmp", "updates");
@@ -184,7 +185,7 @@ export async function applyUpdate(input: ApplyUpdateInput = {}): Promise<{ jobId
   const result = await checkForUpdate();
   if (!result.configured) throw new Error(result.reason ?? "Update manifest is not configured");
   if (!result.manifest) throw new Error(result.reason ?? "Update manifest is invalid");
-  if (!result.updateAvailable) throw new Error(result.reason ?? "No update is available");
+  if (!result.updateAvailable && !input.forceReapply) throw new Error(result.reason ?? "No update is available");
   if (input.confirmedVersion && input.confirmedVersion !== result.manifest.version) {
     throw new Error("Confirmed version does not match latest update version");
   }
@@ -235,10 +236,29 @@ export async function applyUpdate(input: ApplyUpdateInput = {}): Promise<{ jobId
 
 export async function getUpdateJob(jobId: string): Promise<UpdateJobState | null> {
   try {
-    return JSON.parse(await readFile(jobPath(jobId), "utf8")) as UpdateJobState;
+    const job = JSON.parse(await readFile(jobPath(jobId), "utf8")) as UpdateJobState;
+    return reconcileCompletedUpdateJob(job);
   } catch {
     return null;
   }
+}
+
+async function reconcileCompletedUpdateJob(job: UpdateJobState) {
+  if (terminalStatuses.includes(job.status)) return job;
+  if (job.fromVersion === job.toVersion) return job;
+  const current = await getCurrentVersion();
+  if (current.version !== job.toVersion) return job;
+  const completedJob: UpdateJobState = {
+    ...job,
+    message: "Update completed; running version confirmed",
+    status: "completed",
+    step: "completed",
+    updatedAt: new Date().toISOString(),
+  };
+  await writeJson(jobPath(job.id), completedJob);
+  await writeJson(currentJobPath, completedJob);
+  await releaseUpdateLock();
+  return completedJob;
 }
 
 export function getUpdateLockTtlMs() {

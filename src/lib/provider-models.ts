@@ -8,10 +8,11 @@ export type ConfiguredProviderModel = ProviderModelOption & {
   enabled: boolean;
 };
 
-export type ProviderModelChannel = "provider" | "gemini-bridge" | "codex";
+export type ProviderModelChannel = "provider" | "gemini-bridge" | "codex" | "cliproxy";
 
 export const defaultProviderModelChannel: ProviderModelChannel = "provider";
 export type ProviderModelCatalog = Record<ProviderModelChannel, ProviderModelOption[]>;
+export type ProviderVideoModelCatalog = Pick<ProviderModelCatalog, "provider" | "cliproxy">;
 
 export const geminiBridgeTextModels: ProviderModelOption[] = [
   { id: "gemini-web", label: "Gemini Web" },
@@ -28,6 +29,10 @@ export const geminiBridgeImageModels: ProviderModelOption[] = [
 
 export const providerImageModelCatalog: ProviderModelCatalog = {
   codex: [{ id: "gpt-image-2", label: "GPT Image 2" }],
+  cliproxy: [
+    { id: "grok-imagine-image", label: "Grok Imagine Image" },
+    { id: "grok-imagine-image-quality", label: "Grok Imagine Image · Quality" },
+  ],
   "gemini-bridge": geminiBridgeImageModels,
   provider: [
     { id: "gpt-image-2", label: "GPT Image 2" },
@@ -36,12 +41,20 @@ export const providerImageModelCatalog: ProviderModelCatalog = {
   ],
 };
 
+export const providerVideoModelCatalog: ProviderVideoModelCatalog = {
+  cliproxy: [
+    { id: "grok-imagine-video", label: "Grok Imagine Video" },
+  ],
+  provider: [],
+};
+
 export const providerReversePromptModelCatalog: ProviderModelCatalog = {
   codex: [
     { id: "gpt-5.5", label: "GPT 5.5" },
     { id: "gpt-5.5-mini", label: "GPT 5.5 Mini" },
     { id: "gpt-5.4-mini", label: "GPT 5.4 Mini" },
   ],
+  cliproxy: [],
   "gemini-bridge": geminiBridgeTextModels,
   provider: [
     { id: "gpt-5.5", label: "GPT 5.5" },
@@ -52,6 +65,7 @@ export const providerReversePromptModelCatalog: ProviderModelCatalog = {
 
 export function getProviderModelChannelLabel(channel: ProviderModelChannel | undefined) {
   if (channel === "codex") return "Codex 代理";
+  if (channel === "cliproxy") return "CLIProxyAPI";
   if (channel === "gemini-bridge") return "Gemini Bridge";
   return "第三方 API";
 }
@@ -64,6 +78,7 @@ const imageModelKeywords = [
   "sd",
   "midjourney",
   "imagen",
+  "grok-imagine",
 ];
 
 export function normalizeConfiguredModels(
@@ -165,7 +180,7 @@ function getConfiguredModelKey(model: ProviderModelOption) {
 }
 
 function getModelChannel(value: unknown): ProviderModelChannel | undefined {
-  if (value === "codex" || value === "gemini-bridge" || value === "provider") return value;
+  if (value === "codex" || value === "cliproxy" || value === "gemini-bridge" || value === "provider") return value;
   return undefined;
 }
 

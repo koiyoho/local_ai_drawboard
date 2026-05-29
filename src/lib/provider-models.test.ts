@@ -6,6 +6,8 @@ import {
   getDefaultProviderModelSelection,
   getEnabledProviderModels,
   getProviderModelOptionValue,
+  providerImageModelCatalog,
+  providerVideoModelCatalog,
   normalizeConfiguredModels,
   normalizeProviderModelSelection,
   parseConfiguredModelValue,
@@ -58,9 +60,14 @@ assert.deepEqual(getEnabledProviderModels([
 ]);
 
 assert.equal(encodeConfiguredModelValue({ channel: "codex", id: "gpt-image-2" }), "codex:gpt-image-2");
+assert.equal(encodeConfiguredModelValue({ channel: "cliproxy", id: "grok-imagine-video" }), "cliproxy:grok-imagine-video");
 assert.deepEqual(parseConfiguredModelValue("gemini-bridge:gemini-web"), {
   channel: "gemini-bridge",
   id: "gemini-web",
+});
+assert.deepEqual(parseConfiguredModelValue("cliproxy:grok-imagine-video"), {
+  channel: "cliproxy",
+  id: "grok-imagine-video",
 });
 assert.deepEqual(parseConfiguredModelValue("legacy-model"), {
   channel: undefined,
@@ -96,3 +103,5 @@ assert.equal(normalizeProviderModelSelection(duplicateModelOptions, "gpt-image-2
 assert.equal(normalizeProviderModelSelection(duplicateModelOptions, "codex:gpt-image-2"), "codex:gpt-image-2");
 assert.equal(getDefaultProviderModelSelection(duplicateModelOptions, "gpt-image-2"), "provider:gpt-image-2");
 assert.equal(getDefaultProviderModelSelection(duplicateModelOptions, "codex:gpt-image-2"), "codex:gpt-image-2");
+assert.ok(providerImageModelCatalog.cliproxy.some((model) => model.id === "grok-imagine-image"));
+assert.ok(providerVideoModelCatalog.cliproxy.some((model) => model.id === "grok-imagine-video"));

@@ -6,7 +6,7 @@ import { AdminUsagePanel, type AdminUsageUserPayload } from "@/components/AdminU
 import { AdminUserReview, type AdminReviewUser } from "@/components/AdminUserReview";
 import { CodexLoginCard } from "@/components/CodexLoginCard";
 import { GeminiBridgeCard } from "@/components/GeminiBridgeCard";
-import { ProviderModelPoolSettings, ProviderSettingsForm, type ProviderSettingHistoryPayload, type ProviderSettingPayload } from "@/components/ProviderSettingsForm";
+import { CliProxySettingsCard, ProviderModelPoolSettings, ProviderSettingsForm, type ProviderSettingHistoryPayload, type ProviderSettingPayload } from "@/components/ProviderSettingsForm";
 import { SystemUpdatePanel } from "@/components/SystemUpdatePanel";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { IconApiKey, IconAssets, IconReview, IconUsage, IconVersion } from "@/components/ui/icons";
@@ -18,6 +18,7 @@ import { ErrorState, LoadingState } from "./LoadingState";
 type AdminPayload = {
   assetIntegrityReport: AdminAssetIntegrityReportPayload;
   adminUsageUsers: AdminUsageUserPayload[];
+  cliProxySetting: ProviderSettingPayload | null;
   providerHistories: ProviderSettingHistoryPayload[];
   pendingReviewUsers: AdminReviewUser[];
   providerSetting: ProviderSettingPayload | null;
@@ -41,8 +42,9 @@ export function AdminApp() {
           return;
         }
 
-        const [providerPayload, pending, usage, assetIntegrity] = await Promise.all([
+        const [providerPayload, cliProxyPayload, pending, usage, assetIntegrity] = await Promise.all([
           apiJson<{ histories?: ProviderSettingHistoryPayload[]; providerSetting: ProviderSettingPayload | null }>("/api/provider-settings"),
+          apiJson<{ providerSetting: ProviderSettingPayload | null }>("/api/provider-settings/cliproxy"),
           isLocal ? Promise.resolve({ users: [] }) : apiJson<{ users: AdminReviewUser[] }>("/api/admin/users"),
           isLocal ? Promise.resolve({ users: [] }) : apiJson<{ users: AdminUsageUserPayload[] }>("/api/admin/usage"),
           isLocal
@@ -52,6 +54,7 @@ export function AdminApp() {
         setPayload({
           assetIntegrityReport: assetIntegrity.report,
           adminUsageUsers: usage.users,
+          cliProxySetting: cliProxyPayload.providerSetting,
           pendingReviewUsers: pending.users,
           providerHistories: providerPayload.histories ?? [],
           providerSetting: providerPayload.providerSetting,
@@ -122,6 +125,10 @@ export function AdminApp() {
               <AppIcon icon={IconApiKey} size="sm" />
               模型池
             </a>
+            <a href="#cliproxy-settings">
+              <AppIcon icon={IconApiKey} size="sm" />
+              CLIProxyAPI
+            </a>
             <a href="#system-update">
               <AppIcon icon={IconVersion} size="sm" />
               在线升级
@@ -166,6 +173,12 @@ export function AdminApp() {
             onExpandedChange={setIsModelPoolExpanded}
             onSettingChange={(providerSetting) =>
               setPayload((current) => current ? { ...current, providerSetting } : current)
+            }
+          />
+          <CliProxySettingsCard
+            initialSetting={payload.cliProxySetting}
+            onSettingChange={(providerSetting) =>
+              setPayload((current) => current ? { ...current, cliProxySetting: providerSetting } : current)
             }
           />
           <GeminiBridgeCard />
