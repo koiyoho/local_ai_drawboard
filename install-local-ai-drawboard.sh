@@ -4,6 +4,7 @@ set -eu
 REPO_URL="https://github.com/koiyoho/local_ai_drawboard.git"
 REPO_MARKER="koiyoho/local_ai_drawboard"
 TARGET_DIR="local_ai_drawboard"
+TARGET_DIR_SET="0"
 START_ARGS="--setup"
 
 while [ "$#" -gt 0 ]; do
@@ -14,6 +15,7 @@ while [ "$#" -gt 0 ]; do
         exit 1
       fi
       TARGET_DIR="$2"
+      TARGET_DIR_SET="1"
       shift 2
       ;;
     --setup-only)
@@ -47,11 +49,6 @@ HELP
   esac
 done
 
-echo
-echo "Local AI Drawboard installer"
-echo "Target: $(pwd)/$TARGET_DIR"
-echo
-
 if ! command -v git >/dev/null 2>&1; then
   echo "[ERROR] Git was not found."
   echo "Install Git from https://git-scm.com/downloads and run this script again."
@@ -75,6 +72,18 @@ if ! command -v npm >/dev/null 2>&1; then
   echo "[ERROR] npm was not found. Reinstall Node.js 22 or newer and include npm."
   exit 1
 fi
+
+if [ "$TARGET_DIR_SET" = "0" ] && [ -d ".git" ]; then
+  CURRENT_ORIGIN_URL="$(git -C "." remote get-url origin 2>/dev/null || true)"
+  case "$CURRENT_ORIGIN_URL" in
+    *"$REPO_MARKER"*) TARGET_DIR="." ;;
+  esac
+fi
+
+echo
+echo "Local AI Drawboard installer"
+echo "Target: $(pwd)/$TARGET_DIR"
+echo
 
 if [ -d "$TARGET_DIR" ]; then
   if [ ! -d "$TARGET_DIR/.git" ]; then

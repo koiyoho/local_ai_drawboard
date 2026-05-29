@@ -96,3 +96,52 @@ CREATE TABLE "BoardSnapshot" (
     await rm(tempDir, { force: true, recursive: true });
   }
 });
+
+test("init-db backfills missing provider video defaults to CLIProxy", async () => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "init-db-provider-test-"));
+  const dbPath = path.join(tempDir, "custom.db");
+  try {
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+CREATE TABLE "ProviderSetting" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "userId" TEXT NOT NULL,
+  "provider" TEXT NOT NULL DEFAULT 'openai-compatible',
+  "displayName" TEXT NOT NULL,
+  "apiKey" TEXT NOT NULL,
+  "baseUrl" TEXT,
+  "imageModel" TEXT NOT NULL,
+  "textModel" TEXT NOT NULL DEFAULT 'gpt-5.5',
+  "enabled" BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`);
+    db.prepare(`
+INSERT INTO "ProviderSetting" ("id", "userId", "displayName", "apiKey", "imageModel")
+VALUES ('provider-1', 'user-1', 'OpenAI compatible', 'provider-secret', 'gpt-image-2')
+`).run();
+    db.close();
+
+    await execFileAsync(process.execPath, ["scripts/init-db.mjs"], {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
+    });
+
+    const migratedDb = new DatabaseSync(dbPath);
+    try {
+      const setting = migratedDb.prepare(`
+SELECT "videoModel", "enabledVideoModels"
+FROM "ProviderSetting"
+WHERE "id" = 'provider-1'
+`).get();
+      assert.equal(setting.videoModel, "cliproxy:grok-imagine-video");
+      assert.deepEqual(JSON.parse(setting.enabledVideoModels), [
+        { channel: "cliproxy", enabled: true, id: "grok-imagine-video", label: "Grok Imagine Video" },
+      ]);
+    } finally {
+      migratedDb.close();
+    }
+  } finally {
+    await rm(tempDir, { force: true, recursive: true });
+  }
+});

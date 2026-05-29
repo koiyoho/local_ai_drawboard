@@ -8,6 +8,10 @@ mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = new DatabaseSync(dbPath);
 const localUserId = "local-user";
 const adminUsername = process.env.ADMIN_USERNAME?.trim() || (process.env.APP_VARIANT === "local" ? "local" : "admin");
+const defaultVideoModel = "cliproxy:grok-imagine-video";
+const defaultEnabledVideoModels = JSON.stringify([
+  { channel: "cliproxy", enabled: true, id: "grok-imagine-video", label: "Grok Imagine Video" },
+]);
 
 db.exec(`
 PRAGMA foreign_keys = ON;
@@ -327,6 +331,15 @@ if (!hasVideoModel) {
 if (!hasEnabledVideoModels) {
   db.exec(`ALTER TABLE "ProviderSetting" ADD COLUMN "enabledVideoModels" TEXT;`);
 }
+db.exec(`
+UPDATE "ProviderSetting"
+SET "videoModel" = '${defaultVideoModel}'
+WHERE "videoModel" IS NULL OR trim("videoModel") = '';
+
+UPDATE "ProviderSetting"
+SET "enabledVideoModels" = '${defaultEnabledVideoModels.replaceAll("'", "''")}'
+WHERE "enabledVideoModels" IS NULL OR trim("enabledVideoModels") = '';
+`);
 if (!hasCliProxyApiKey) {
   db.exec(`ALTER TABLE "ProviderSetting" ADD COLUMN "cliProxyApiKey" TEXT;`);
 }

@@ -4,6 +4,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "REPO_URL=https://github.com/koiyoho/local_ai_drawboard.git"
 set "REPO_MARKER=koiyoho/local_ai_drawboard"
 set "TARGET_DIR=local_ai_drawboard"
+set "TARGET_DIR_SET=0"
 set "START_ARGS=--setup"
 
 :parse_args
@@ -14,6 +15,7 @@ if /I "%~1"=="--dir" (
     exit /b 1
   )
   set "TARGET_DIR=%~2"
+  set "TARGET_DIR_SET=1"
   shift
   shift
   goto parse_args
@@ -41,13 +43,6 @@ echo Run: install-local-ai-drawboard.bat --help
 exit /b 1
 
 :args_done
-for %%I in ("%TARGET_DIR%") do set "TARGET_DISPLAY=%%~fI"
-
-echo.
-echo Local AI Drawboard installer
-echo Target: %TARGET_DISPLAY%
-echo.
-
 where git >nul 2>nul
 if errorlevel 1 (
   echo [ERROR] Git was not found.
@@ -75,6 +70,20 @@ if errorlevel 1 (
   echo [ERROR] npm was not found. Reinstall Node.js 22 or newer and include npm.
   exit /b 1
 )
+
+if "%TARGET_DIR_SET%"=="0" if exist ".git\" (
+  set "CURRENT_ORIGIN_URL="
+  for /f "delims=" %%R in ('git -C "." remote get-url origin 2^>nul') do set "CURRENT_ORIGIN_URL=%%R"
+  echo(!CURRENT_ORIGIN_URL! | findstr /I /C:"%REPO_MARKER%" >nul
+  if not errorlevel 1 set "TARGET_DIR=."
+)
+
+for %%I in ("%TARGET_DIR%") do set "TARGET_DISPLAY=%%~fI"
+
+echo.
+echo Local AI Drawboard installer
+echo Target: %TARGET_DISPLAY%
+echo.
 
 if exist "%TARGET_DIR%\" (
   if not exist "%TARGET_DIR%\.git\" (

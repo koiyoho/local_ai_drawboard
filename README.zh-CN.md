@@ -54,7 +54,7 @@ sh start-local.sh
 
 ## 更新
 
-先在运行应用的终端里按 `Ctrl+C` 停止应用，然后再次运行“从零开始”里的同一条安装命令。
+先在运行应用的终端里按 `Ctrl+C` 停止应用，然后在父目录或现有 `local_ai_drawboard` 目录内再次运行“从零开始”里的同一条安装命令。
 
 Windows PowerShell：
 
@@ -68,7 +68,7 @@ macOS / Linux：
 curl -fsSL https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/install-local-ai-drawboard.sh | sh
 ```
 
-它会更新已有的 `local_ai_drawboard` 文件夹，并重新启动本地服务。
+它会更新已有安装，并重新启动本地服务。
 
 ## 配置 AI 接口
 
