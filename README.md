@@ -6,25 +6,27 @@ Local AI Drawboard is a local single-user AI image workspace. It runs on your ow
 
 ## Requirements
 
+- Git
 - Node.js 22 or newer
 - npm 10 or newer
-- Python 3.10 or newer only if you use the optional Gemini Web Bridge
 
-## One-Click Start
+## Start From Zero
 
-On Windows, double-click this file in the project folder:
+Run the command in the folder where you want `local_ai_drawboard` to be created.
 
-```text
-start-local.bat
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "iwr https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/install-local-ai-drawboard.bat -OutFile install-local-ai-drawboard.bat; .\install-local-ai-drawboard.bat"
 ```
 
-On macOS / Linux, run this from the project folder:
+macOS / Linux:
 
 ```bash
-sh start-local.sh
+curl -fsSL https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/install-local-ai-drawboard.sh | sh
 ```
 
-It checks Node.js, installs dependencies, creates local config, initializes the database, builds the app, and starts the local service.
+The installer downloads this project, installs dependencies, creates local config, initializes the database, builds the app, and starts the local service.
 
 Open:
 
@@ -32,12 +34,15 @@ Open:
 http://localhost:3010
 ```
 
-## First-Time Setup
+## Stop
+
+Press `Ctrl+C` in the terminal running the app.
+
+## Start Next Time
 
 Windows:
 
 ```powershell
-git clone https://github.com/koiyoho/local_ai_drawboard.git
 cd local_ai_drawboard
 .\start-local.bat
 ```
@@ -45,60 +50,27 @@ cd local_ai_drawboard
 macOS / Linux:
 
 ```bash
-git clone https://github.com/koiyoho/local_ai_drawboard.git && cd local_ai_drawboard && sh start-local.sh
-```
-
-## Start
-
-On Windows, double-click:
-
-```text
-start-local.bat
-```
-
-Or run:
-
-```powershell
-.\start-local.bat
-```
-
-On macOS / Linux, run this from the project folder:
-
-```bash
+cd local_ai_drawboard
 sh start-local.sh
 ```
 
-Local startup forces single-user mode and skips the login page.
-
-## Stop
-
-Press `Ctrl+C` in the terminal running the app.
-
-## Next Time
-
-On Windows, double-click `start-local.bat`, then open `http://localhost:3010`.
-
-On macOS / Linux, run `sh start-local.sh`, then open `http://localhost:3010`.
-
 ## Update
 
-Stop the app with `Ctrl+C`, then run:
+Stop the app with `Ctrl+C`, then run the same installer command again.
 
-Windows:
+Windows PowerShell:
 
 ```powershell
-git pull
-.\start-local.bat --setup
+powershell -ExecutionPolicy Bypass -Command "iwr https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/install-local-ai-drawboard.bat -OutFile install-local-ai-drawboard.bat; .\install-local-ai-drawboard.bat"
 ```
 
 macOS / Linux:
 
 ```bash
-git pull
-sh start-local.sh --setup
+curl -fsSL https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/install-local-ai-drawboard.sh | sh
 ```
 
-Then open `http://localhost:3010`.
+It will update the existing `local_ai_drawboard` folder and restart the local service.
 
 ## Configure AI
 
@@ -109,27 +81,4 @@ Open the app, go to **Local Settings**, and configure an OpenAI-compatible provi
 - image model
 - text model
 
-The app is local single-user software. It has no login page, no user approval flow, and no usage quota management.
-
-## Optional Gemini Web Bridge
-
-Install the optional bridge dependencies:
-
-```bash
-python -m pip install -r scripts/requirements-gemini-bridge.txt
-```
-
-Start the bridge in another terminal:
-
-```bash
-npm run gemini:bridge
-```
-
-Then configure **Local Settings** with:
-
-- API Key: the `GEMINI_BRIDGE_API_KEY` value in `.env`
-- Base URL: `http://127.0.0.1:8317/v1`
-- image model: `gemini-web`
-- text model: `gemini-web`
-
-Keep Gemini cookies and API keys on your own computer.
+Local startup uses single-user mode and skips the login page.
