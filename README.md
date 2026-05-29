@@ -56,7 +56,7 @@ sh start-local.sh
 
 ## Update
 
-Stop the app with `Ctrl+C`, then run the same installer command again.
+Stop the app with `Ctrl+C`, then run the same installer command again from the parent folder or from inside the existing `local_ai_drawboard` folder.
 
 Windows PowerShell:
 
@@ -70,7 +70,7 @@ macOS / Linux:
 curl -fsSL https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/install-local-ai-drawboard.sh | sh
 ```
 
-It will update the existing `local_ai_drawboard` folder and restart the local service.
+It will update the existing installation and restart the local service.
 
 ## Configure AI
 

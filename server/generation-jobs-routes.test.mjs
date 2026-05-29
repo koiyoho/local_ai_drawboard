@@ -544,6 +544,61 @@ test("POST /api/video-generation-jobs accepts channel-qualified CLIProxy video m
   }
 });
 
+test("POST /api/video-generation-jobs defaults omitted video model to CLIProxy", async () => {
+  const { setBoardVideoGenerationRunnerForTest } = await import(generationJobRoutesModuleUrl);
+  setBoardVideoGenerationRunnerForTest(async () => ({ ok: true }));
+  const app = await createTestApp();
+  try {
+    const user = await prisma.user.create({
+      data: {
+        canUseAdminProvider: false,
+        generationFiveHourLimit: 10,
+        generationLimit: 30,
+        name: "video-default-model-user",
+        role: "user",
+        status: "approved",
+        username: `video-default-model-user-${Date.now()}`,
+      },
+    });
+    await prisma.providerSetting.create({
+      data: {
+        apiKey: "provider-secret",
+        baseUrl: "https://provider.example.test/v1",
+        cliProxyApiKey: "cliproxy-secret",
+        cliProxyBaseUrl: "https://cliproxy.example.test/v1",
+        displayName: "OpenAI 兼容接口",
+        imageModel: "gpt-image-2",
+        provider: "openai-compatible",
+        textModel: "gpt-5.5",
+        userId: user.id,
+      },
+    });
+    const board = await prisma.board.create({
+      data: { name: "Default video route", userId: user.id },
+    });
+
+    const response = await app.inject({
+      body: {
+        boardId: board.id,
+        prompt: "镜头缓慢推进产品",
+        waitForCompletion: false,
+      },
+      headers: { cookie: await sessionCookieFor(user.id) },
+      method: "POST",
+      url: "/api/video-generation-jobs",
+    });
+
+    assert.equal(response.statusCode, 202, response.body);
+    const params = JSON.parse(JSON.parse(response.body).job.paramsJson);
+    assert.equal(params.model, "cliproxy:grok-imagine-video");
+    assert.equal(params.runtimeModel, "grok-imagine-video");
+    assert.equal(params.providerRoute, "cliproxy");
+  } finally {
+    setBoardVideoGenerationRunnerForTest(null);
+    await app.close();
+  }
+});
+
 test("POST /api/video-generation-jobs accepts up to seven video reference images", async () => {
   const { setBoardVideoGenerationRunnerForTest } = await import(generationJobRoutesModuleUrl);
   setBoardVideoGenerationRunnerForTest(async () => ({ ok: true }));

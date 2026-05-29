@@ -150,7 +150,7 @@ export async function registerGenerationJobRoutes(app: FastifyInstance) {
 }
 
 function getVideoModel(setting: { videoModel?: string | null }) {
-  return setting.videoModel?.trim() || "grok-imagine-video";
+  return setting.videoModel?.trim() || "cliproxy:grok-imagine-video";
 }
 
 async function markStaleRunningJobsFailed(app: FastifyInstance) {
