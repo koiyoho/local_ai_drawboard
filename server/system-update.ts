@@ -22,6 +22,8 @@ export type CurrentVersion = {
 };
 
 export type UpdateCheckResult = {
+  applySupported: boolean;
+  applyUnsupportedReason?: string;
   configured: boolean;
   current: CurrentVersion;
   manifest: UpdateManifest | null;
@@ -104,9 +106,11 @@ export async function getCurrentVersion(): Promise<CurrentVersion> {
 
 export async function checkForUpdate(fetchImpl: typeof fetch = fetch): Promise<UpdateCheckResult> {
   const current = await getCurrentVersion();
+  const applySupport = getUpdateApplySupport();
   const manifestUrl = process.env.UPDATE_MANIFEST_URL?.trim();
   if (!manifestUrl) {
     return {
+      ...applySupport,
       configured: false,
       current,
       manifest: null,
@@ -119,6 +123,7 @@ export async function checkForUpdate(fetchImpl: typeof fetch = fetch): Promise<U
     assertAllowedUrl(manifestUrl, getAllowedManifestHosts(), "manifest");
   } catch (error) {
     return {
+      ...applySupport,
       configured: true,
       manifest: null,
       current,
@@ -130,6 +135,7 @@ export async function checkForUpdate(fetchImpl: typeof fetch = fetch): Promise<U
   const response = await fetchImpl(manifestUrl, { headers: { Accept: "application/json" } });
   if (!response.ok) {
     return {
+      ...applySupport,
       configured: true,
       current,
       manifest: null,
@@ -143,6 +149,7 @@ export async function checkForUpdate(fetchImpl: typeof fetch = fetch): Promise<U
     manifest = parseUpdateManifest(await response.json());
   } catch (error) {
     return {
+      ...applySupport,
       configured: true,
       current,
       manifest: null,
@@ -153,6 +160,7 @@ export async function checkForUpdate(fetchImpl: typeof fetch = fetch): Promise<U
 
   if (manifest.channel !== current.updateChannel) {
     return {
+      ...applySupport,
       configured: true,
       current,
       manifest,
@@ -165,6 +173,7 @@ export async function checkForUpdate(fetchImpl: typeof fetch = fetch): Promise<U
     assertAllowedUrl(manifest.packageUrl, getAllowedPackageHosts(), "package");
   } catch (error) {
     return {
+      ...applySupport,
       configured: true,
       current,
       manifest,
@@ -174,6 +183,7 @@ export async function checkForUpdate(fetchImpl: typeof fetch = fetch): Promise<U
   }
 
   return {
+    ...applySupport,
     configured: true,
     current,
     manifest,
@@ -188,6 +198,9 @@ export async function applyUpdate(input: ApplyUpdateInput = {}): Promise<{ jobId
   if (!result.updateAvailable && !input.forceReapply) throw new Error(result.reason ?? "No update is available");
   if (input.confirmedVersion && input.confirmedVersion !== result.manifest.version) {
     throw new Error("Confirmed version does not match latest update version");
+  }
+  if (!result.applySupported) {
+    throw new Error(result.applyUnsupportedReason ?? "Automatic update apply is not supported in this environment");
   }
   if (result.manifest.migrationMode === "manual_required") {
     throw new Error("This update requires a manual upgrade");
@@ -299,6 +312,19 @@ export function getAllowedManifestHosts() {
 
 export function getAllowedPackageHosts() {
   return parseHostList(process.env.UPDATE_PACKAGE_ALLOWED_HOSTS, defaultPackageHosts);
+}
+
+export function getUpdateApplySupport() {
+  if (process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY === "1") {
+    return { applySupported: true };
+  }
+  if (process.platform === "linux") {
+    return { applySupported: true };
+  }
+  return {
+    applySupported: false,
+    applyUnsupportedReason: "Automatic update apply requires a systemd-managed Linux service. Re-run the local installer to update this installation.",
+  };
 }
 
 export function validateDeployPackageManifest(value: unknown, updateManifest: UpdateManifest): DeployPackageManifest {

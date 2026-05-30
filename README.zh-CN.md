@@ -70,6 +70,16 @@ curl -fsSL https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/ins
 
 它会更新已有安装，并重新启动本地服务。
 
+### 可选：检查更新
+
+如果希望在 **本地设置** 里检查最新 GitHub Release，可以在 `.env` 中设置：
+
+```text
+UPDATE_MANIFEST_URL="https://github.com/koiyoho/local_ai_drawboard/releases/download/v0.1.37/update-manifest.json"
+```
+
+修改 `.env` 后需要重新启动本地服务。Windows 和 macOS 本地安装检测到新版本后，请使用上面的安装命令重新执行更新。
+
 ## 配置 AI 接口
 
 打开应用后进入 **本地设置**，配置 OpenAI 兼容接口：

@@ -18,6 +18,8 @@ export type UpdateManifestPayload = {
 };
 
 export type UpdateCheckPayload = {
+  applySupported: boolean;
+  applyUnsupportedReason?: string;
   configured: boolean;
   current: CurrentVersionPayload;
   manifest: UpdateManifestPayload | null;

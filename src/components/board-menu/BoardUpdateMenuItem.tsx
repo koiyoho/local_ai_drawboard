@@ -25,6 +25,7 @@ export function BoardUpdateMenuItem({ isAdmin }: { isAdmin: boolean }) {
     try {
       const current = await apiJson<UpdateCheckPayload["current"]>("/api/system/version");
       setPayload((currentPayload) => currentPayload ? { ...currentPayload, current } : {
+        applySupported: false,
         configured: false,
         current,
         manifest: null,
@@ -107,7 +108,7 @@ export function BoardUpdateMenuItem({ isAdmin }: { isAdmin: boolean }) {
 
   const currentVersion = payload?.current.version ?? "读取中";
   const latestVersion = payload?.manifest?.version ?? "";
-  const canApply = Boolean(isAdmin && payload?.updateAvailable && payload.manifest?.migrationMode !== "manual_required");
+  const canApply = Boolean(isAdmin && payload?.applySupported && payload.updateAvailable && payload.manifest?.migrationMode !== "manual_required");
   const buttonText = job && !isTerminalUpdateJobStatus(job.status)
     ? "升级中"
     : isApplying
@@ -119,7 +120,9 @@ export function BoardUpdateMenuItem({ isAdmin }: { isAdmin: boolean }) {
           : "检查";
   const detailText = job
     ? `${formatJobStatus(job.status)} · ${job.message}`
-    : message || (payload?.updateAvailable ? "有新版本可直接升级" : payload?.reason ?? "自动检查更新");
+    : message || (payload?.updateAvailable
+      ? payload.applySupported ? "有新版本可直接升级" : payload.applyUnsupportedReason ?? "有新版本，需要手动升级"
+      : payload?.reason ?? "自动检查更新");
 
   return (
     <div className={payload?.updateAvailable ? "board-global-menu-version has-update" : "board-global-menu-version"} role="none">

@@ -72,6 +72,16 @@ curl -fsSL https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/ins
 
 It will update the existing installation and restart the local service.
 
+### Optional Update Checks
+
+To let the app check the latest GitHub release from **Local Settings**, set this line in `.env`:
+
+```text
+UPDATE_MANIFEST_URL="https://github.com/koiyoho/local_ai_drawboard/releases/download/v0.1.37/update-manifest.json"
+```
+
+Restart the local service after changing `.env`. On Windows and macOS local installs, use the installer command above to apply updates after the app reports a new version.
+
 ## Configure AI
 
 Open the app, go to **Local Settings**, and configure an OpenAI-compatible provider:

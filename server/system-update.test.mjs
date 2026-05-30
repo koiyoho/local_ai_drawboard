@@ -9,6 +9,7 @@ process.env.npm_package_version = packageJson.version;
 delete process.env.UPDATE_MANIFEST_URL;
 delete process.env.UPDATE_MANIFEST_ALLOWED_HOSTS;
 delete process.env.UPDATE_PACKAGE_ALLOWED_HOSTS;
+delete process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY;
 delete process.env.UPDATE_DISABLE_UPDATER_START;
 await rm(new URL("../tmp/updates", import.meta.url), { force: true, recursive: true });
 
@@ -77,11 +78,39 @@ test("checkForUpdate reports available update with allowed package host", async 
     version: "0.2.0",
   }));
   assert.equal(result.updateAvailable, true);
+  assert.equal(result.applySupported, process.platform === "linux");
   assert.equal(result.manifest.migrationMode, "none");
   delete process.env.UPDATE_MANIFEST_URL;
 });
 
+test("applyUpdate blocks unsupported local apply environments", async () => {
+  process.env.UPDATE_MANIFEST_URL = "https://github.com/org/repo/releases/latest/download/manifest.json";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({
+    channel: "local",
+    commit: "abc123",
+    migrationMode: "none",
+    packageUrl: "https://github.com/org/repo/releases/download/v1/aiboard.tar.gz",
+    sha256: "c".repeat(64),
+    version: "0.2.0",
+  });
+  try {
+    if (process.platform === "linux") {
+      assert.equal((await checkForUpdate()).applySupported, true);
+      return;
+    }
+    await assert.rejects(
+      () => applyUpdate({ confirmedVersion: "0.2.0" }),
+      /systemd-managed Linux service/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.UPDATE_MANIFEST_URL;
+  }
+});
+
 test("applyUpdate blocks manual_required migration packages", async () => {
+  process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY = "1";
   process.env.UPDATE_MANIFEST_URL = "https://github.com/org/repo/releases/latest/download/manifest.json";
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({
@@ -99,11 +128,13 @@ test("applyUpdate blocks manual_required migration packages", async () => {
     );
   } finally {
     globalThis.fetch = originalFetch;
+    delete process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY;
     delete process.env.UPDATE_MANIFEST_URL;
   }
 });
 
 test("applyUpdate blocks confirmedVersion mismatch", async () => {
+  process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY = "1";
   process.env.UPDATE_MANIFEST_URL = "https://github.com/org/repo/releases/latest/download/manifest.json";
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({
@@ -121,11 +152,13 @@ test("applyUpdate blocks confirmedVersion mismatch", async () => {
     );
   } finally {
     globalThis.fetch = originalFetch;
+    delete process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY;
     delete process.env.UPDATE_MANIFEST_URL;
   }
 });
 
 test("applyUpdate can reapply the current manifest when explicitly requested", async () => {
+  process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY = "1";
   process.env.UPDATE_MANIFEST_URL = "https://github.com/org/repo/releases/latest/download/manifest.json";
   process.env.UPDATE_DISABLE_UPDATER_START = "1";
   const originalFetch = globalThis.fetch;
@@ -150,6 +183,7 @@ test("applyUpdate can reapply the current manifest when explicitly requested", a
     assert.equal(job.status, "queued");
   } finally {
     globalThis.fetch = originalFetch;
+    delete process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY;
     delete process.env.UPDATE_MANIFEST_URL;
     delete process.env.UPDATE_DISABLE_UPDATER_START;
     await rm(new URL("../tmp/updates", import.meta.url), { force: true, recursive: true });
@@ -157,6 +191,7 @@ test("applyUpdate can reapply the current manifest when explicitly requested", a
 });
 
 test("applyUpdate creates a handoff job without starting updater when disabled", async () => {
+  process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY = "1";
   process.env.UPDATE_MANIFEST_URL = "https://github.com/org/repo/releases/latest/download/manifest.json";
   process.env.UPDATE_DISABLE_UPDATER_START = "1";
   const originalFetch = globalThis.fetch;
@@ -178,6 +213,7 @@ test("applyUpdate creates a handoff job without starting updater when disabled",
     assert.equal(manifest.version, "0.2.0");
   } finally {
     globalThis.fetch = originalFetch;
+    delete process.env.UPDATE_ALLOW_UNSUPPORTED_PLATFORM_APPLY;
     delete process.env.UPDATE_MANIFEST_URL;
     delete process.env.UPDATE_DISABLE_UPDATER_START;
     await rm(new URL("../tmp/updates", import.meta.url), { force: true, recursive: true });

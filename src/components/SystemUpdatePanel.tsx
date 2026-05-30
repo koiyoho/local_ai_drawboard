@@ -92,9 +92,10 @@ export function SystemUpdatePanel() {
 
   const current = payload?.current;
   const manifest = payload?.manifest;
-  const canApply = Boolean(payload?.updateAvailable && manifest && manifest.migrationMode !== "manual_required");
+  const canApply = Boolean(payload?.applySupported && payload.updateAvailable && manifest && manifest.migrationMode !== "manual_required");
   const canReapplyCurrent = Boolean(
     payload
+    && payload.applySupported
     && !payload.updateAvailable
     && manifest
     && current?.version === manifest.version
@@ -159,7 +160,9 @@ export function SystemUpdatePanel() {
           ) : null}
           {payload ? (
             <p className="form-hint">
-              {payload.updateAvailable
+              {payload.updateAvailable && !payload.applySupported
+                ? payload.applyUnsupportedReason ?? "当前环境不支持自动应用更新，请使用安装脚本更新。"
+                : payload.updateAvailable
                 ? "检测到新版本。升级会先下载并校验发布包，服务重启期间页面可能短暂断开。"
                 : canReapplyCurrent
                   ? "当前已是最新版本。如本地文件或依赖状态异常，可重新应用当前发布包。"
@@ -168,7 +171,7 @@ export function SystemUpdatePanel() {
           ) : null}
           {payload?.updateAvailable ? (
             <button disabled={!canApply || isApplying} onClick={() => void applyLatestUpdate()} type="button">
-              {isApplying ? "启动中" : manifest?.migrationMode === "manual_required" ? "需要手动升级" : "下载并升级"}
+              {isApplying ? "启动中" : manifest?.migrationMode === "manual_required" || !payload.applySupported ? "需要手动升级" : "下载并升级"}
             </button>
           ) : null}
           {canReapplyCurrent ? (
@@ -179,7 +182,11 @@ export function SystemUpdatePanel() {
         </>
       ) : (
         <p className="admin-usage-collapsed-summary">
-          {payload?.updateAvailable ? "检测到新版本，展开后可执行升级。" : payload?.reason ?? "展开查看发布通道、校验摘要和升级操作。"}
+          {payload?.updateAvailable
+            ? payload.applySupported
+              ? "检测到新版本，展开后可执行升级。"
+              : "检测到新版本，当前环境需要手动升级。"
+            : payload?.reason ?? "展开查看发布通道、校验摘要和升级操作。"}
         </p>
       )}
       {job ? (
