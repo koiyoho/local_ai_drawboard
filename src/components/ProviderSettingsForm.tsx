@@ -465,7 +465,11 @@ export function CliProxySettingsCard({
     startTransition(async () => {
       setStatus("");
       setOauthStates((current) => ({ ...current, [providerName]: { status: "opening" } }));
-      const response = await apiFetch(`/api/provider-settings/cliproxy/oauth/${providerName}/start`, { method: "POST" });
+      const response = await apiFetch(`/api/provider-settings/cliproxy/oauth/${providerName}/start`, {
+        body: "{}",
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
       const payload = (await response.json().catch(() => ({}))) as { error?: string; state?: string; url?: string };
       if (!response.ok || !payload.url || !payload.state) {
         const errorMessage = payload.error ?? "无法启动 CLIProxyAPI OAuth 登录";

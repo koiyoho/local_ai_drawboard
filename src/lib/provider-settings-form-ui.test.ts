@@ -38,6 +38,8 @@ test("admin console exposes CLIProxyAPI management, official OAuth login, and Gr
   assert.match(source, /provider: "anthropic"/);
   assert.match(source, /Claude Code/);
   assert.match(source, /apiFetch\(`\/api\/provider-settings\/cliproxy\/oauth\/\$\{providerName\}\/start`/);
+  assert.match(source, /body: "\{\}"/);
+  assert.match(source, /headers: \{ "Content-Type": "application\/json" \}/);
   assert.match(source, /apiFetch\(`\/api\/provider-settings\/cliproxy\/oauth\/\$\{providerName\}\/status\?state=/);
   assert.match(source, /window\.open\(payload\.url, "_blank", "noopener,noreferrer"\)/);
   assert.match(source, /beginCliProxyOAuthPolling/);
