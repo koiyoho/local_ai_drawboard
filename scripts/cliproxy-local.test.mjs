@@ -47,3 +47,43 @@ test("cliproxy local ensure writes embedded runtime config and env", async () =>
     await rm(tempDir, { force: true, recursive: true });
   }
 });
+
+test("cliproxy local system downloader times out instead of hanging", async () => {
+  if (process.platform !== "win32") return;
+
+  const tempDir = await mkdtemp(path.join(tmpdir(), "cliproxy-local-timeout-test-"));
+  const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+  const scriptPath = path.join(repoRoot, "scripts", "cliproxy-local.mjs");
+  const fakeBinDir = path.join(tempDir, "fake-bin");
+  const fakePowershellPath = path.join(fakeBinDir, "powershell.cmd");
+
+  await writeFile(path.join(tempDir, ".env"), [
+    'DATABASE_URL="file:./prisma/local-board.db"',
+    'CLIPROXY_BASE_URL="http://127.0.0.1:9327/v1"',
+    "",
+  ].join("\n"));
+  await mkdir(fakeBinDir, { recursive: true });
+  await writeFile(fakePowershellPath, [
+    "@echo off",
+    "ping -n 30 127.0.0.1 >nul",
+    "",
+  ].join("\r\n"));
+
+  try {
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [scriptPath, "ensure"], {
+        cwd: tempDir,
+        env: {
+          ...process.env,
+          CLIPROXY_FORCE_SYSTEM_DOWNLOAD: "1",
+          CLIPROXY_SYSTEM_DOWNLOAD_TIMEOUT_MS: "100",
+          Path: `${fakeBinDir};${process.env.Path || ""}`,
+        },
+        timeout: 5000,
+      }),
+      /timed out after 100ms/,
+    );
+  } finally {
+    await rm(tempDir, { force: true, recursive: true });
+  }
+});

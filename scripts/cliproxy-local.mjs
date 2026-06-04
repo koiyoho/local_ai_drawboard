@@ -223,6 +223,10 @@ async function writeConfig({ apiKey, managementKey, port }) {
 
 async function downloadFile(url, outputPath) {
   await mkdir(path.dirname(outputPath), { recursive: true });
+  if (process.env.CLIPROXY_FORCE_SYSTEM_DOWNLOAD === "1") {
+    await downloadFileWithSystemTool(url, outputPath);
+    return;
+  }
   try {
     const response = await fetch(url, { headers: { Accept: "application/octet-stream" }, signal: AbortSignal.timeout(30000) });
     if (!response.ok || !response.body) throw new Error(`Download failed with ${response.status}: ${url}`);
@@ -234,6 +238,7 @@ async function downloadFile(url, outputPath) {
 }
 
 async function downloadFileWithSystemTool(url, outputPath) {
+  const timeoutMs = readPositiveIntEnv("CLIPROXY_SYSTEM_DOWNLOAD_TIMEOUT_MS", 120000);
   if (process.platform === "win32") {
     await run("powershell", [
       "-NoProfile",
@@ -243,10 +248,10 @@ async function downloadFileWithSystemTool(url, outputPath) {
       "& { param($Uri, $OutFile) Invoke-WebRequest -Uri $Uri -OutFile $OutFile -TimeoutSec 120 }",
       url,
       outputPath,
-    ]);
+    ], { timeoutMs });
     return;
   }
-  await run("curl", ["-fL", "--connect-timeout", "30", "--max-time", "120", "-o", outputPath, url]);
+  await run("curl", ["-fL", "--connect-timeout", "30", "--max-time", "120", "-o", outputPath, url], { timeoutMs });
 }
 
 async function verifyArchiveChecksum(assetName, archivePath) {
@@ -380,6 +385,11 @@ function generateCliProxyApiKey() {
   return `clp_${randomBytes(24).toString("base64url")}`;
 }
 
+function readPositiveIntEnv(key, fallback) {
+  const parsed = Number.parseInt(process.env[key] || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function sha256File(filePath) {
   return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
@@ -392,11 +402,23 @@ function sha256File(filePath) {
   });
 }
 
-function run(command, args) {
+function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: process.cwd(), stdio: "inherit", windowsHide: true });
+    let timedOut = false;
+    const timer = options.timeoutMs
+      ? setTimeout(() => {
+        timedOut = true;
+        child.kill();
+      }, options.timeoutMs)
+      : null;
     child.on("error", reject);
     child.on("exit", (code) => {
+      if (timer) clearTimeout(timer);
+      if (timedOut) {
+        reject(new Error(`${command} ${args.join(" ")} timed out after ${options.timeoutMs}ms`));
+        return;
+      }
       if (code === 0) resolve();
       else reject(new Error(`${command} ${args.join(" ")} failed with exit code ${code}`));
     });
