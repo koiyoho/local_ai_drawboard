@@ -26,7 +26,7 @@ macOS / Linux:
 curl -fsSL https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/install-local-ai-drawboard.sh | sh
 ```
 
-The installer downloads this project, installs dependencies, creates local config, initializes the database, builds the app, and starts the local service.
+The installer downloads this project, installs dependencies, creates local config, initializes the database, builds the app, installs the bundled CLIProxyAPI sidecar, and starts the local service.
 
 Open:
 
@@ -92,3 +92,15 @@ Open the app, go to **Local Settings**, and configure an OpenAI-compatible provi
 - text model
 
 Local startup uses single-user mode and keeps boards, assets, settings, and generated files on your own computer.
+
+### Built-In CLIProxyAPI
+
+The local installer downloads CLIProxyAPI automatically into `.local/cliproxy`, writes a local-only config, generates `CLIPROXY_API_KEY` / `MANAGEMENT_PASSWORD`, and starts CLIProxyAPI together with the app. Users do not need to download CLIProxyAPI separately.
+
+Default local endpoint:
+
+```text
+http://127.0.0.1:8327/v1
+```
+
+Use **Local Settings → CLIProxyAPI** to check status, rotate the local API key, or start provider OAuth login.

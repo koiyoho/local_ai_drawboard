@@ -534,7 +534,7 @@ export function CliProxySettingsCard({
         </div>
       </div>
       <p className="provider-field-hint">
-        CLIProxyAPI 负责 Grok、Claude、Codex、Gemini CLI、Antigravity 等本机代理通道；这里与普通 OpenAI 兼容 API 分开保存。
+        CLIProxyAPI 负责 Grok、Claude、Codex、Gemini CLI、Antigravity 等本机代理通道；本地启动会自动安装并拉起内置 CLIProxyAPI。
       </p>
       <div className="settings-summary cliproxy-source-summary">
         <span>Base URL 来源</span>
@@ -565,7 +565,7 @@ export function CliProxySettingsCard({
             placeholder={setting?.cliProxyEnvironmentBaseUrl ? `服务端 ${setting.cliProxyEnvironmentBaseUrl}` : "http://127.0.0.1:8327/v1"}
             value={cliProxyBaseUrl}
           />
-          <span className="provider-field-hint">本地默认端口通常是 8327，模型调用地址需要填写到 /v1。</span>
+          <span className="provider-field-hint">内置 CLIProxyAPI 默认使用 8327 端口，模型调用地址会自动写入到 /v1。</span>
         </label>
         <label>
           CLIProxyAPI /v1 调用 API Key
@@ -587,7 +587,7 @@ export function CliProxySettingsCard({
             type="password"
             value={cliProxyManagementKey}
           />
-          <span className="provider-field-hint">用于 /v0/management 管理路由、api-keys 同步和官方 OAuth 登录。</span>
+          <span className="provider-field-hint">启动脚本会自动生成；用于 /v0/management 管理路由、api-keys 同步和官方 OAuth 登录。</span>
         </label>
       </div>
       <div className="provider-actions">

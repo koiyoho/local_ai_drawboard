@@ -73,6 +73,7 @@ NEED_SETUP="$FORCE_SETUP"
 [ -d "node_modules" ] || NEED_SETUP=1
 [ -d "src/generated/prisma" ] || NEED_SETUP=1
 [ -f "dist/server/server/index.js" ] || NEED_SETUP=1
+[ -x ".local/cliproxy/bin/cli-proxy-api" ] || NEED_SETUP=1
 
 if [ "$NEED_SETUP" = "1" ]; then
   echo "Running local setup. This may take several minutes the first time."

@@ -16,6 +16,8 @@ export const deployPackageExcludes = [
   "prisma/*.db",
   "prisma/*.db-*",
   ".env",
+  ".local",
+  ".local/**",
   "node_modules",
 ];
 
@@ -26,6 +28,7 @@ export const forbiddenDeployPackagePatterns = [
   /^generated-images(?:\/|$)/,
   /^prisma\/.*\.db(?:-.+)?$/,
   /^\.env$/,
+  /^\.local(?:\/|$)/,
   /^node_modules(?:\/|$)/,
 ];
 

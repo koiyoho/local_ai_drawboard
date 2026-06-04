@@ -10,6 +10,7 @@ await run("npm", ["ci"]);
 await run("npm", ["run", "db:generate"]);
 await run("npm", ["run", "db:init"]);
 await run("npm", ["run", "build"]);
+await run("node", ["scripts/cliproxy-local.mjs", "ensure"]);
 
 console.log("");
 console.log("Local setup complete.");
@@ -52,6 +53,7 @@ async function ensureEnvFile() {
       'ADMIN_USERNAME="local"',
       'UPDATE_CHANNEL="local"',
       'UPDATE_MANIFEST_URL=""',
+      'CLIPROXY_BASE_URL="http://127.0.0.1:8327/v1"',
       "",
     ].join("\n"),
   );
@@ -72,8 +74,8 @@ function upsertEnvLine(envText, key, value) {
 }
 
 function run(command, args) {
-  const executable = isWindows ? "cmd.exe" : command;
-  const commandArgs = isWindows ? ["/d", "/s", "/c", `${command}.cmd`, ...args] : args;
+  const executable = isWindows && command === "npm" ? "cmd.exe" : command;
+  const commandArgs = isWindows && command === "npm" ? ["/d", "/s", "/c", "npm.cmd", ...args] : args;
   const display = [command, ...args].join(" ");
   console.log(`\n> ${display}`);
   return new Promise((resolve, reject) => {

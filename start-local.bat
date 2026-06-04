@@ -57,6 +57,7 @@ if not exist ".env" set "NEED_SETUP=1"
 if not exist "node_modules\" set "NEED_SETUP=1"
 if not exist "src\generated\prisma\" set "NEED_SETUP=1"
 if not exist "dist\server\server\index.js" set "NEED_SETUP=1"
+if not exist ".local\cliproxy\bin\cli-proxy-api.exe" set "NEED_SETUP=1"
 
 if "%NEED_SETUP%"=="1" (
   echo Running local setup. This may take several minutes the first time.

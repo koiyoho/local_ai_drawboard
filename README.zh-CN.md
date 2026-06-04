@@ -24,7 +24,7 @@ macOS / Linux：
 curl -fsSL https://raw.githubusercontent.com/koiyoho/local_ai_drawboard/main/install-local-ai-drawboard.sh | sh
 ```
 
-安装器会自动下载项目、安装依赖、创建本地配置、初始化数据库、构建应用，并启动本地服务。
+安装器会自动下载项目、安装依赖、创建本地配置、初始化数据库、构建应用、安装内置 CLIProxyAPI sidecar，并启动本地服务。
 
 打开浏览器访问：
 
@@ -90,3 +90,15 @@ UPDATE_MANIFEST_URL="https://github.com/koiyoho/local_ai_drawboard/releases/down
 - 反推 / 提示词模型
 
 本地启动会使用单用户模式，画板、素材、配置和生成文件都保存在你自己的电脑上。
+
+### 内置 CLIProxyAPI
+
+本地安装器会自动把 CLIProxyAPI 下载到 `.local/cliproxy`，写入仅本机监听的配置，生成 `CLIPROXY_API_KEY` / `MANAGEMENT_PASSWORD`，并在启动应用时一并启动 CLIProxyAPI。用户无需额外下载或手动配置 CLIProxyAPI。
+
+默认本地地址：
+
+```text
+http://127.0.0.1:8327/v1
+```
+
+在 **本地设置 → CLIProxyAPI** 中可以查看状态、轮换本地 API Key，或发起各服务商 OAuth 登录。
