@@ -409,7 +409,7 @@ function run(command, args, options = {}) {
     const timer = options.timeoutMs
       ? setTimeout(() => {
         timedOut = true;
-        child.kill();
+        killProcessTree(child);
       }, options.timeoutMs)
       : null;
     child.on("error", reject);
@@ -423,6 +423,19 @@ function run(command, args, options = {}) {
       else reject(new Error(`${command} ${args.join(" ")} failed with exit code ${code}`));
     });
   });
+}
+
+function killProcessTree(child) {
+  if (process.platform === "win32" && child.pid) {
+    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    }).on("error", () => {
+      child.kill();
+    });
+    return;
+  }
+  child.kill();
 }
 
 async function exists(filePath) {
