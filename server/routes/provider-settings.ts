@@ -486,7 +486,7 @@ async function startCliProxyOAuth(
   if (!cliProxySetting.success) return { error: cliProxySetting.error, statusCode: cliProxySetting.statusCode };
   const response = await requestCliProxyManagementJson(
     cliProxySetting.value,
-    `${getCliProxyOAuthEndpoint(providerName)}?is_webui=true`,
+    getCliProxyOAuthStartPath(providerName),
   );
   if ("error" in response) return response;
   if (!isRecord(response.payload)) return { error: "CLIProxyAPI OAuth 返回格式无效", statusCode: 502 };
@@ -578,6 +578,11 @@ function getCliProxyOAuthEndpoint(providerName: CliProxyOAuthProvider) {
     case "antigravity":
       return "antigravity-auth-url";
   }
+}
+
+function getCliProxyOAuthStartPath(providerName: CliProxyOAuthProvider) {
+  const endpoint = getCliProxyOAuthEndpoint(providerName);
+  return providerName === "anthropic" ? endpoint : `${endpoint}?is_webui=true`;
 }
 
 function resolveCliProxyManagementBaseUrl(baseUrl: string) {

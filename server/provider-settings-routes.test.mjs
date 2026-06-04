@@ -663,7 +663,7 @@ test("CLIProxyAPI OAuth start proxies official Claude management auth URL and re
     assert.equal(JSON.parse(claudeResponse.body).url, "https://accounts.example/oauth");
 
     assert.deepEqual(requested.map((request) => request.url), [
-      "https://cliproxy-oauth.example/v0/management/anthropic-auth-url?is_webui=true",
+      "https://cliproxy-oauth.example/v0/management/anthropic-auth-url",
     ]);
     assert.equal(requested[0].authorization, "Bearer cliproxy-management-secret");
     assert.equal(requested[0].managementKey, "cliproxy-management-secret");
