@@ -223,7 +223,7 @@ async function writeConfig({ apiKey, managementKey, port }) {
 
 async function downloadFile(url, outputPath) {
   await mkdir(path.dirname(outputPath), { recursive: true });
-  if (process.env.CLIPROXY_FORCE_SYSTEM_DOWNLOAD === "1") {
+  if (process.env.CLIPROXY_FORCE_SYSTEM_DOWNLOAD === "1" || getDownloadProxy()) {
     await downloadFileWithSystemTool(url, outputPath);
     return;
   }
@@ -239,6 +239,22 @@ async function downloadFile(url, outputPath) {
 
 async function downloadFileWithSystemTool(url, outputPath) {
   const timeoutMs = readPositiveIntEnv("CLIPROXY_SYSTEM_DOWNLOAD_TIMEOUT_MS", 120000);
+  const proxy = getDownloadProxy();
+  if (proxy) {
+    await run(getCurlBinary(), [
+      "-fL",
+      "--connect-timeout",
+      "30",
+      "--max-time",
+      "120",
+      "--proxy",
+      proxy,
+      "-o",
+      outputPath,
+      url,
+    ], { timeoutMs });
+    return;
+  }
   if (process.platform === "win32") {
     await run("powershell", [
       "-NoProfile",
@@ -256,9 +272,7 @@ async function downloadFileWithSystemTool(url, outputPath) {
 
 async function verifyArchiveChecksum(assetName, archivePath) {
   const checksumsUrl = `https://github.com/${repoOwner}/${repoName}/releases/download/v${defaultVersion}/checksums.txt`;
-  const response = await fetch(checksumsUrl, { headers: { Accept: "text/plain" } });
-  if (!response.ok) throw new Error(`checksums.txt returned ${response.status}`);
-  const checksums = await response.text();
+  const checksums = await downloadText(checksumsUrl);
   const expected = checksums
     .split(/\r?\n/)
     .map((line) => line.trim().split(/\s+/))
@@ -269,6 +283,28 @@ async function verifyArchiveChecksum(assetName, archivePath) {
     await rm(archivePath, { force: true });
     throw new Error(`checksum mismatch for ${assetName}`);
   }
+}
+
+async function downloadText(url) {
+  const proxy = getDownloadProxy();
+  if (proxy) {
+    return run(getCurlBinary(), [
+      "-fL",
+      "--connect-timeout",
+      "30",
+      "--max-time",
+      "120",
+      "--proxy",
+      proxy,
+      url,
+    ], {
+      capture: true,
+      timeoutMs: readPositiveIntEnv("CLIPROXY_SYSTEM_DOWNLOAD_TIMEOUT_MS", 120000),
+    });
+  }
+  const response = await fetch(url, { headers: { Accept: "text/plain" } });
+  if (!response.ok) throw new Error(`${url} returned ${response.status}`);
+  return response.text();
 }
 
 function getPlatformAssetPart() {
@@ -390,6 +426,31 @@ function readPositiveIntEnv(key, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function getDownloadProxy() {
+  const value = readFirstEnvValue([
+    "CLIPROXY_DOWNLOAD_PROXY",
+    "ALL_PROXY",
+    "all_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+  ]);
+  return value?.trim() || "";
+}
+
+function getCurlBinary() {
+  return process.env.CLIPROXY_CURL_BINARY?.trim() || "curl";
+}
+
+function readFirstEnvValue(keys) {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value?.trim()) return value;
+  }
+  return "";
+}
+
 function sha256File(filePath) {
   return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
@@ -404,7 +465,16 @@ function sha256File(filePath) {
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: process.cwd(), stdio: "inherit", windowsHide: true });
+    const child = spawn(command, args, {
+      cwd: process.cwd(),
+      shell: shouldSpawnWithShell(command),
+      stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    if (child.stdout) child.stdout.on("data", (chunk) => { stdout += chunk; });
+    if (child.stderr) child.stderr.on("data", (chunk) => { stderr += chunk; });
     let timedOut = false;
     const timer = options.timeoutMs
       ? setTimeout(() => {
@@ -419,8 +489,8 @@ function run(command, args, options = {}) {
         reject(new Error(`${command} ${args.join(" ")} timed out after ${options.timeoutMs}ms`));
         return;
       }
-      if (code === 0) resolve();
-      else reject(new Error(`${command} ${args.join(" ")} failed with exit code ${code}`));
+      if (code === 0) resolve(options.capture ? stdout : undefined);
+      else reject(new Error(`${command} ${args.join(" ")} failed with exit code ${code}${stderr ? `\n${stderr}` : ""}`));
     });
   });
 }
@@ -436,6 +506,10 @@ function killProcessTree(child) {
     return;
   }
   child.kill();
+}
+
+function shouldSpawnWithShell(command) {
+  return process.platform === "win32" && /\.(bat|cmd)$/i.test(command);
 }
 
 async function exists(filePath) {

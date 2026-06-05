@@ -87,3 +87,58 @@ test("cliproxy local system downloader times out instead of hanging", async () =
     await rm(tempDir, { force: true, recursive: true });
   }
 });
+
+test("cliproxy local system downloader uses curl for socks5 proxies on Windows", async () => {
+  if (process.platform !== "win32") return;
+
+  const tempDir = await mkdtemp(path.join(tmpdir(), "cliproxy-local-proxy-test-"));
+  const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+  const scriptPath = path.join(repoRoot, "scripts", "cliproxy-local.mjs");
+  const fakeBinDir = path.join(tempDir, "fake-bin");
+  const fakeCurlPath = path.join(fakeBinDir, "curl.cmd");
+  const fakePowershellPath = path.join(fakeBinDir, "powershell.cmd");
+  const curlArgsPath = path.join(tempDir, "curl-args.txt");
+  const powershellArgsPath = path.join(tempDir, "powershell-args.txt");
+
+  await writeFile(path.join(tempDir, ".env"), [
+    'DATABASE_URL="file:./prisma/local-board.db"',
+    'CLIPROXY_BASE_URL="http://127.0.0.1:9327/v1"',
+    "",
+  ].join("\n"));
+  await mkdir(fakeBinDir, { recursive: true });
+  await writeFile(fakeCurlPath, [
+    "@echo off",
+    `echo %* > "${curlArgsPath}"`,
+    "exit /b 42",
+    "",
+  ].join("\r\n"));
+  await writeFile(fakePowershellPath, [
+    "@echo off",
+    `echo %* > "${powershellArgsPath}"`,
+    "exit /b 43",
+    "",
+  ].join("\r\n"));
+
+  try {
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [scriptPath, "ensure"], {
+        cwd: tempDir,
+        env: {
+          ...process.env,
+          CLIPROXY_DOWNLOAD_PROXY: "socks5h://127.0.0.1:10808",
+          CLIPROXY_CURL_BINARY: fakeCurlPath,
+          CLIPROXY_FORCE_SYSTEM_DOWNLOAD: "1",
+          Path: `${fakeBinDir};${process.env.Path || ""}`,
+        },
+        timeout: 5000,
+      }),
+      /curl(?:\.cmd)? .* failed with exit code 42/,
+    );
+
+    const curlArgs = await readFile(curlArgsPath, "utf8");
+    assert.match(curlArgs, /--proxy socks5h:\/\/127\.0\.0\.1:10808/);
+    await assert.rejects(() => readFile(powershellArgsPath, "utf8"), /ENOENT/);
+  } finally {
+    await rm(tempDir, { force: true, recursive: true });
+  }
+});
