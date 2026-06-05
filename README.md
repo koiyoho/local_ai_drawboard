@@ -104,3 +104,23 @@ http://127.0.0.1:8327/v1
 ```
 
 Use **Local Settings → CLIProxyAPI** to check status, rotate the local API key, or start provider OAuth login.
+
+### Network Notes For First Start
+
+First start downloads CLIProxyAPI from GitHub as part of the automatic local setup. If your network cannot reach GitHub release assets directly, the setup may pause or fail during this download. You still do not need to install CLIProxyAPI manually.
+
+In that case, configure a temporary proxy in the same terminal, then rerun the installer or `start-local` command:
+
+```powershell
+$env:CLIPROXY_DOWNLOAD_PROXY = "socks5h://your-proxy-host:port"
+.\start-local.bat
+```
+
+On macOS / Linux:
+
+```bash
+export CLIPROXY_DOWNLOAD_PROXY="socks5h://your-proxy-host:port"
+sh start-local.sh
+```
+
+The proxy only affects the CLIProxyAPI download step. `CLIPROXY_DOWNLOAD_PROXY` accepts `http://`, `https://`, `socks5://`, or `socks5h://` proxy URLs.
