@@ -142,3 +142,45 @@ test("cliproxy local system downloader uses curl for socks5 proxies on Windows",
     await rm(tempDir, { force: true, recursive: true });
   }
 });
+
+test("cliproxy local proxy downloader uses an extended default timeout", async () => {
+  if (process.platform !== "win32") return;
+
+  const tempDir = await mkdtemp(path.join(tmpdir(), "cliproxy-local-proxy-timeout-test-"));
+  const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+  const scriptPath = path.join(repoRoot, "scripts", "cliproxy-local.mjs");
+  const fakeBinDir = path.join(tempDir, "fake-bin");
+  const fakeCurlPath = path.join(fakeBinDir, "curl.cmd");
+
+  await writeFile(path.join(tempDir, ".env"), [
+    'DATABASE_URL="file:./prisma/local-board.db"',
+    'CLIPROXY_BASE_URL="http://127.0.0.1:9327/v1"',
+    "",
+  ].join("\n"));
+  await mkdir(fakeBinDir, { recursive: true });
+  await writeFile(fakeCurlPath, [
+    "@echo off",
+    "ping -n 30 127.0.0.1 >nul",
+    "",
+  ].join("\r\n"));
+
+  try {
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [scriptPath, "ensure"], {
+        cwd: tempDir,
+        env: {
+          ...process.env,
+          CLIPROXY_CURL_BINARY: fakeCurlPath,
+          CLIPROXY_DOWNLOAD_PROXY: "socks5h://127.0.0.1:10808",
+          CLIPROXY_FORCE_SYSTEM_DOWNLOAD: "1",
+          CLIPROXY_PROXY_DOWNLOAD_TIMEOUT_MS: "150",
+        },
+        timeout: 5000,
+      }),
+      /timed out after 150ms/,
+    );
+  } finally {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await rm(tempDir, { force: true, recursive: true });
+  }
+});

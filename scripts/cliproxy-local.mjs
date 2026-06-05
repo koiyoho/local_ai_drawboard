@@ -238,15 +238,16 @@ async function downloadFile(url, outputPath) {
 }
 
 async function downloadFileWithSystemTool(url, outputPath) {
-  const timeoutMs = readPositiveIntEnv("CLIPROXY_SYSTEM_DOWNLOAD_TIMEOUT_MS", 120000);
   const proxy = getDownloadProxy();
+  const timeoutMs = getSystemDownloadTimeoutMs(Boolean(proxy));
+  const timeoutSeconds = Math.ceil(timeoutMs / 1000);
   if (proxy) {
     await run(getCurlBinary(), [
       "-fL",
       "--connect-timeout",
       "30",
       "--max-time",
-      "120",
+      String(timeoutSeconds),
       "--proxy",
       proxy,
       "-o",
@@ -293,13 +294,13 @@ async function downloadText(url) {
       "--connect-timeout",
       "30",
       "--max-time",
-      "120",
+      String(Math.ceil(getSystemDownloadTimeoutMs(true) / 1000)),
       "--proxy",
       proxy,
       url,
     ], {
       capture: true,
-      timeoutMs: readPositiveIntEnv("CLIPROXY_SYSTEM_DOWNLOAD_TIMEOUT_MS", 120000),
+      timeoutMs: getSystemDownloadTimeoutMs(true),
     });
   }
   const response = await fetch(url, { headers: { Accept: "text/plain" } });
@@ -424,6 +425,16 @@ function generateCliProxyApiKey() {
 function readPositiveIntEnv(key, fallback) {
   const parsed = Number.parseInt(process.env[key] || "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getSystemDownloadTimeoutMs(hasProxy) {
+  if (hasProxy) {
+    return readPositiveIntEnv(
+      "CLIPROXY_PROXY_DOWNLOAD_TIMEOUT_MS",
+      readPositiveIntEnv("CLIPROXY_SYSTEM_DOWNLOAD_TIMEOUT_MS", 600000),
+    );
+  }
+  return readPositiveIntEnv("CLIPROXY_SYSTEM_DOWNLOAD_TIMEOUT_MS", 120000);
 }
 
 function getDownloadProxy() {
