@@ -462,6 +462,14 @@ export function CliProxySettingsCard({
       setStatus("请先保存 CLIProxyAPI Base URL 和管理密钥。管理密钥是 MANAGEMENT_PASSWORD，不是 /v1 调用 API Key。");
       return;
     }
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) {
+      const errorMessage = "浏览器阻止了授权窗口，请允许弹窗后重试";
+      setOauthStates((current) => ({ ...current, [providerName]: { errorMessage, status: "error" } }));
+      setStatus(errorMessage);
+      return;
+    }
+    popup.opener = null;
     startTransition(async () => {
       setStatus("");
       setOauthStates((current) => ({ ...current, [providerName]: { status: "opening" } }));
@@ -473,17 +481,12 @@ export function CliProxySettingsCard({
       const payload = (await response.json().catch(() => ({}))) as { error?: string; state?: string; url?: string };
       if (!response.ok || !payload.url || !payload.state) {
         const errorMessage = payload.error ?? "无法启动 CLIProxyAPI OAuth 登录";
+        popup.close();
         setOauthStates((current) => ({ ...current, [providerName]: { errorMessage, status: "error" } }));
         setStatus(errorMessage);
         return;
       }
-      const opened = window.open(payload.url, "_blank", "noopener,noreferrer");
-      if (!opened) {
-        const errorMessage = "浏览器阻止了授权窗口，请允许弹窗后重试";
-        setOauthStates((current) => ({ ...current, [providerName]: { errorMessage, state: payload.state, status: "error" } }));
-        setStatus(errorMessage);
-        return;
-      }
+      popup.location.href = payload.url;
       setOauthStates((current) => ({ ...current, [providerName]: { state: payload.state, status: "wait" } }));
       setStatus(`${getCliProxyOAuthProviderTitle(providerName)} 授权窗口已打开，等待 CLIProxyAPI 返回登录状态`);
       beginCliProxyOAuthPolling(providerName, payload.state);

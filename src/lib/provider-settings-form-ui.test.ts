@@ -41,7 +41,9 @@ test("admin console exposes CLIProxyAPI management, official OAuth login, and Gr
   assert.match(source, /body: "\{\}"/);
   assert.match(source, /headers: \{ "Content-Type": "application\/json" \}/);
   assert.match(source, /apiFetch\(`\/api\/provider-settings\/cliproxy\/oauth\/\$\{providerName\}\/status\?state=/);
-  assert.match(source, /window\.open\(payload\.url, "_blank", "noopener,noreferrer"\)/);
+  assert.match(source, /const popup = window\.open\("about:blank", "_blank"\)/);
+  assert.match(source, /popup\.opener = null/);
+  assert.match(source, /popup\.location\.href = payload\.url/);
   assert.match(source, /beginCliProxyOAuthPolling/);
   assert.match(adminAppSource, /CliProxySettingsCard/);
   assert.match(adminAppSource, /"\/api\/provider-settings\/cliproxy"/);
