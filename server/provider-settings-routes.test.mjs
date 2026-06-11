@@ -736,3 +736,94 @@ test("CLIProxyAPI OAuth status polls management state and requires management ke
     await app.close();
   }
 });
+
+test("CLIProxyAPI OAuth status explains OpenAI unsupported region token exchange failures", async () => {
+  const app = await createTestApp();
+  const originalFetch = globalThis.fetch;
+  try {
+    const user = await createUser();
+    const cookie = await sessionCookieFor(user.id);
+    await app.inject({
+      body: {
+        cliProxyApiKey: "cliproxy-region-secret",
+        cliProxyBaseUrl: "https://cliproxy-region.example/v1",
+        cliProxyManagementKey: "cliproxy-region-management-secret",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings/cliproxy",
+    });
+
+    globalThis.fetch = async () => Response.json({
+      error: "Failed to exchange authorization code for tokens: token exchange failed with status 403: {\"error\":{\"code\":\"unsupported_country_region_territory\",\"message\":\"Country, region, or territory not supported\",\"param\":null,\"type\":\"request_forbidden\"}}",
+      status: "error",
+    });
+
+    const response = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/provider-settings/cliproxy/oauth/codex/status?state=region-state",
+    });
+    assert.equal(response.statusCode, 200);
+    const payload = JSON.parse(response.body);
+    assert.equal(payload.status, "error");
+    assert.equal(payload.errorCode, "openai_unsupported_region");
+    assert.match(payload.errorMessage, /OpenAI 拒绝当前 CLIProxyAPI 出口地区/);
+    assert.match(payload.errorMessage, /重启本地服务/);
+    assert.doesNotMatch(payload.errorMessage, /authorization code/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await app.close();
+  }
+});
+
+test("CLIProxyAPI OAuth diagnostics reports management auth readiness and normalized region failures", async () => {
+  const app = await createTestApp();
+  const originalFetch = globalThis.fetch;
+  try {
+    const user = await createUser();
+    const cookie = await sessionCookieFor(user.id);
+    await app.inject({
+      body: {
+        cliProxyApiKey: "cliproxy-oauth-diagnostic-secret",
+        cliProxyBaseUrl: "https://cliproxy-oauth-diagnostic.example/v1",
+        cliProxyManagementKey: "cliproxy-oauth-diagnostic-management-secret",
+      },
+      headers: { cookie },
+      method: "PUT",
+      url: "/api/provider-settings/cliproxy",
+    });
+
+    globalThis.fetch = async () => Response.json({ state: "state-456", url: "https://accounts.example/oauth" });
+    const readyResponse = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      url: "/api/provider-settings/cliproxy/oauth/diagnostics",
+    });
+    assert.equal(readyResponse.statusCode, 200);
+    const readyPayload = JSON.parse(readyResponse.body);
+    assert.equal(readyPayload.summary, "CLIProxyAPI OAuth 管理端可发起授权");
+    assert.equal(readyPayload.check.status, "ok");
+
+    globalThis.fetch = async () => Response.json({
+      error: {
+        code: "unsupported_country_region_territory",
+        message: "Country, region, or territory not supported",
+        type: "request_forbidden",
+      },
+    }, { status: 403 });
+    const failedResponse = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      url: "/api/provider-settings/cliproxy/oauth/diagnostics",
+    });
+    assert.equal(failedResponse.statusCode, 200);
+    const failedPayload = JSON.parse(failedResponse.body);
+    assert.equal(failedPayload.errorCode, "openai_unsupported_region");
+    assert.equal(failedPayload.summary, "OpenAI 拒绝当前 CLIProxyAPI 出口地区");
+    assert.match(failedPayload.check.message, /重启本地服务/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await app.close();
+  }
+});

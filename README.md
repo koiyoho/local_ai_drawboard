@@ -105,6 +105,19 @@ http://127.0.0.1:8327/v1
 
 Use **Local Settings → CLIProxyAPI** to check status, rotate the local API key, or start provider OAuth login.
 
+### CLIProxyAPI Setup Flow
+
+CLIProxyAPI is embedded in the local app. You do not need to download or run CLIProxyAPI manually.
+
+1. Start the app with the installer or `start-local`.
+2. Open `http://localhost:3010`, then go to **Local Settings → CLIProxyAPI**.
+3. Click **初始化本地配置** if the page shows missing local config.
+4. Click **自检** to verify the `/v1` model endpoint and saved model routing.
+5. Click **OAuth 网络自检** before Codex / Gemini CLI / Claude OAuth if your network is unstable.
+6. Click **开始登录** for the provider you want to use, finish the official OAuth page, then return to the app.
+
+If Codex OAuth reports that the country, region, or territory is not supported, the browser may have opened the authorization page successfully while the CLIProxyAPI background token exchange still used an unsupported network exit. Configure a suitable process-level proxy or network for the local service, restart the app, then run **OAuth 网络自检** again.
+
 ### Network Notes For First Start
 
 First start downloads CLIProxyAPI from GitHub as part of the automatic local setup. If your network cannot reach GitHub release assets directly, the setup may pause or fail during this download. You still do not need to install CLIProxyAPI manually.

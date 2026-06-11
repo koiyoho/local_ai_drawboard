@@ -11235,12 +11235,23 @@ button:active:not(:disabled) {
 
 .cliproxy-auth-grid span,
 .cliproxy-auth-command span,
-.cliproxy-auth-command em {
+.cliproxy-auth-command em,
+.cliproxy-oauth-advice {
   color: #a99f8f;
   font-size: 12px;
   font-style: normal;
   font-weight: 650;
   line-height: 1.45;
+}
+
+.cliproxy-oauth-advice {
+  background: rgba(170, 82, 82, 0.12);
+  border: 1px solid rgba(170, 82, 82, 0.32);
+  border-radius: 8px;
+  color: #f0c9b8;
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 8px;
 }
 
 .cliproxy-auth-grid small {
