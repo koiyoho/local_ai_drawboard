@@ -1,8 +1,8 @@
 import type { FastifyReply } from "fastify";
 import type { ZodType } from "zod";
 
-export function jsonError(reply: FastifyReply, message: string, status = 400) {
-  return reply.status(status).send({ error: message });
+export function jsonError(reply: FastifyReply, message: string, status = 400, extra?: Record<string, unknown>) {
+  return reply.status(status).send({ ...extra, error: message });
 }
 
 export function parseBody<T>(schema: ZodType<T>, value: unknown) {

@@ -38,6 +38,12 @@ test("admin console exposes CLIProxyAPI management, official OAuth login, and Gr
   assert.match(source, /provider: "anthropic"/);
   assert.match(source, /Claude Code/);
   assert.match(source, /apiFetch\(`\/api\/provider-settings\/cliproxy\/oauth\/\$\{providerName\}\/start`/);
+  assert.match(source, /apiFetch\("\/api\/provider-settings\/cliproxy\/oauth\/diagnostics"/);
+  assert.match(source, /OAuth 网络自检/);
+  assert.match(source, /errorCode: payload\.errorCode/);
+  assert.match(source, /openai_unsupported_region/);
+  assert.match(source, /CLIProxyAPI 进程出口网络/);
+  assert.match(source, /重启本地服务/);
   assert.match(source, /body: "\{\}"/);
   assert.match(source, /headers: \{ "Content-Type": "application\/json" \}/);
   assert.match(source, /apiFetch\(`\/api\/provider-settings\/cliproxy\/oauth\/\$\{providerName\}\/status\?state=/);

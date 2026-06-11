@@ -72,6 +72,13 @@ type CliProxyDiagnosticPayload = {
   summary: string;
 };
 
+type CliProxyOAuthDiagnosticPayload = {
+  checkedAt: string;
+  check: CliProxyDiagnosticCheck;
+  errorCode?: string;
+  summary: string;
+};
+
 type CliProxyInitializationPayload = {
   apiKeyPreview: string | null;
   apiKeySyncMessage: string;
@@ -85,6 +92,7 @@ type CliProxyInitializationPayload = {
 type CliProxyOAuthProvider = "gemini-cli" | "codex" | "anthropic" | "antigravity";
 type CliProxyOAuthStatus = "idle" | "opening" | "wait" | "ok" | "error";
 type CliProxyOAuthState = {
+  errorCode?: string;
   errorMessage?: string;
   state?: string;
   status: CliProxyOAuthStatus;
@@ -354,6 +362,7 @@ export function CliProxySettingsCard({
   const [cliProxyManagementKey, setCliProxyManagementKey] = useState("");
   const [cliProxyBaseUrl, setCliProxyBaseUrl] = useState(initialSetting?.cliProxyBaseUrl ?? "");
   const [diagnostics, setDiagnostics] = useState<CliProxyDiagnosticPayload | null>(null);
+  const [oauthDiagnostics, setOauthDiagnostics] = useState<CliProxyOAuthDiagnosticPayload | null>(null);
   const [initializationStatus, setInitializationStatus] = useState<CliProxyInitializationPayload | null>(null);
   const [oauthStates, setOauthStates] = useState<Record<CliProxyOAuthProvider, CliProxyOAuthState>>(() => createInitialCliProxyOAuthStates());
   const [status, setStatus] = useState("");
@@ -457,6 +466,20 @@ export function CliProxySettingsCard({
     });
   }
 
+  function checkCliProxyOAuthDiagnostics() {
+    startTransition(async () => {
+      setStatus("");
+      const response = await apiFetch("/api/provider-settings/cliproxy/oauth/diagnostics", { method: "POST" });
+      const payload = (await response.json().catch(() => ({}))) as Partial<CliProxyOAuthDiagnosticPayload> & { error?: string };
+      if (!response.ok || !payload.check) {
+        setStatus(payload.error ?? "无法验证 CLIProxyAPI OAuth 网络");
+        return;
+      }
+      setOauthDiagnostics(payload as CliProxyOAuthDiagnosticPayload);
+      setStatus(payload.summary ?? "CLIProxyAPI OAuth 网络自检完成");
+    });
+  }
+
   function startCliProxyOAuth(providerName: CliProxyOAuthProvider) {
     if (!hasCliProxyOAuthConfig) {
       setStatus("请先保存 CLIProxyAPI Base URL 和管理密钥。管理密钥是 MANAGEMENT_PASSWORD，不是 /v1 调用 API Key。");
@@ -478,11 +501,11 @@ export function CliProxySettingsCard({
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      const payload = (await response.json().catch(() => ({}))) as { error?: string; state?: string; url?: string };
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; errorCode?: string; state?: string; url?: string };
       if (!response.ok || !payload.url || !payload.state) {
         const errorMessage = payload.error ?? "无法启动 CLIProxyAPI OAuth 登录";
         popup.close();
-        setOauthStates((current) => ({ ...current, [providerName]: { errorMessage, status: "error" } }));
+        setOauthStates((current) => ({ ...current, [providerName]: { errorCode: payload.errorCode, errorMessage, status: "error" } }));
         setStatus(errorMessage);
         return;
       }
@@ -500,12 +523,12 @@ export function CliProxySettingsCard({
     const poll = async () => {
       attempts += 1;
       const response = await apiFetch(`/api/provider-settings/cliproxy/oauth/${providerName}/status?state=${encodeURIComponent(state)}`);
-      const payload = (await response.json().catch(() => ({}))) as { error?: string; errorMessage?: string; status?: "ok" | "wait" | "error" };
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; errorCode?: string; errorMessage?: string; status?: "ok" | "wait" | "error" };
       if (!response.ok || payload.status === "error") {
         window.clearInterval(oauthPollersRef.current[pollerKey]);
         delete oauthPollersRef.current[pollerKey];
         const errorMessage = payload.errorMessage ?? payload.error ?? "CLIProxyAPI OAuth 登录失败";
-        setOauthStates((current) => ({ ...current, [providerName]: { errorMessage, state, status: "error" } }));
+        setOauthStates((current) => ({ ...current, [providerName]: { errorCode: payload.errorCode, errorMessage, state, status: "error" } }));
         setStatus(errorMessage);
         return;
       }
@@ -614,6 +637,10 @@ export function CliProxySettingsCard({
           <AppIcon icon={IconRefresh} size="md" />
           自检
         </button>
+        <button className="secondary-action" disabled={isPending || !hasCliProxyOAuthConfig} onClick={checkCliProxyOAuthDiagnostics} type="button">
+          <AppIcon icon={IconRefresh} size="md" />
+          OAuth 网络自检
+        </button>
       </div>
       <div className="cliproxy-auth-panel">
         <div className="provider-subsection-title">
@@ -626,6 +653,9 @@ export function CliProxySettingsCard({
               <strong>{title}</strong>
               <span>{description}</span>
               <small>{getCliProxyOAuthStatusText(oauthStates[providerName])}</small>
+              {oauthStates[providerName]?.errorCode === "openai_unsupported_region" ? (
+                <em className="cliproxy-oauth-advice">浏览器能打开授权页不代表 CLIProxyAPI 换 token 的后台请求可用；请确认 CLIProxyAPI 进程出口网络，并重启本地服务后重试。</em>
+              ) : null}
               <button disabled={isPending || !hasCliProxyOAuthConfig || oauthStates[providerName]?.status === "wait" || oauthStates[providerName]?.status === "opening"} onClick={() => startCliProxyOAuth(providerName)} type="button">
                 {oauthStates[providerName]?.status === "wait" ? "等待授权" : oauthStates[providerName]?.status === "opening" ? "打开中" : "开始登录"}
               </button>
@@ -638,6 +668,22 @@ export function CliProxySettingsCard({
           <em>当前 CLIProxyAPI 文档未提供 xAI 的管理 OAuth auth-url；请在 CLIProxyAPI 本机进程执行登录命令，登录完成后仍通过本页的 /v1 Base URL 和模型池路由调用 Grok 图像、视频模型。</em>
         </div>
       </div>
+      {oauthDiagnostics ? (
+        <div className="cliproxy-diagnostics" aria-label="CLIProxyAPI OAuth 网络自检结果">
+          <div className="provider-subsection-title">
+            <h3>OAuth 网络自检</h3>
+            <span>{oauthDiagnostics.summary}</span>
+          </div>
+          <div className={`cliproxy-diagnostic-row is-${oauthDiagnostics.check.status}`}>
+            <strong>{oauthDiagnostics.check.label}</strong>
+            <span>{oauthDiagnostics.check.message}</span>
+            <em>{oauthDiagnostics.check.target}</em>
+          </div>
+          {oauthDiagnostics.errorCode === "openai_unsupported_region" ? (
+            <p className="cliproxy-oauth-advice">如果浏览器授权页可以打开但这里失败，问题通常在 CLIProxyAPI 进程的后台 token 交换网络出口；调整进程级代理或网络后，需要重启本地服务。</p>
+          ) : null}
+        </div>
+      ) : null}
       {diagnostics ? (
         <div className="cliproxy-diagnostics" aria-label="CLIProxyAPI 自检结果">
           <div className="provider-subsection-title">

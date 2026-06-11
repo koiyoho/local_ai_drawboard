@@ -302,6 +302,17 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
     };
   });
 
+  app.post("/api/provider-settings/cliproxy/oauth/diagnostics", async (request, reply) => {
+    const user = await requireCurrentUser(request, reply);
+    if (!user) return;
+    const providerSetting = await getCliProxyDiagnosticsSetting(user.id, user.canUseAdminProvider);
+    const result = await checkCliProxyOAuthDiagnostics(providerSetting);
+    return {
+      checkedAt: new Date().toISOString(),
+      ...result,
+    };
+  });
+
   app.post("/api/provider-settings/cliproxy/oauth/:providerName/start", async (request, reply) => {
     const user = await requireCurrentUser(request, reply);
     if (!user) return;
@@ -309,7 +320,7 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
     if (!params.success) return jsonError(reply, "不支持的 CLIProxyAPI OAuth 登录类型", 400);
     const providerSetting = await getCliProxyDiagnosticsSetting(user.id, user.canUseAdminProvider);
     const oauth = await startCliProxyOAuth(providerSetting, params.data.providerName);
-    if ("error" in oauth) return jsonError(reply, oauth.error, oauth.statusCode);
+    if ("error" in oauth) return jsonError(reply, oauth.error, oauth.statusCode, oauth.errorCode ? { errorCode: oauth.errorCode } : undefined);
     return oauth;
   });
 
@@ -322,7 +333,7 @@ export async function registerProviderSettingRoutes(app: FastifyInstance) {
     if (!query.success) return jsonError(reply, "OAuth state 无效或缺失", 400);
     const providerSetting = await getCliProxyDiagnosticsSetting(user.id, user.canUseAdminProvider);
     const oauth = await getCliProxyOAuthStatus(providerSetting, params.data.providerName, query.data.state);
-    if ("error" in oauth) return jsonError(reply, oauth.error, oauth.statusCode);
+    if ("error" in oauth) return jsonError(reply, oauth.error, oauth.statusCode, oauth.errorCode ? { errorCode: oauth.errorCode } : undefined);
     return oauth;
   });
 
@@ -469,7 +480,7 @@ type CliProxyDiagnosticCheck = {
   target: string;
 };
 type CliProxyOAuthProvider = z.infer<typeof cliProxyOAuthProviderSchema>;
-type CliProxyOAuthError = { error: string; statusCode: number };
+type CliProxyOAuthError = { error: string; errorCode?: string; statusCode: number };
 type CliProxyManagementSettingResult =
   | { success: false; error: string; statusCode: number }
   | { success: true; value: { managementBaseUrl: string; managementKey: string } };
@@ -500,7 +511,7 @@ async function getCliProxyOAuthStatus(
   providerSetting: ProviderSetting,
   providerName: CliProxyOAuthProvider,
   state: string,
-): Promise<{ errorMessage?: string; provider: CliProxyOAuthProvider; state: string; status: "ok" | "wait" | "error" } | CliProxyOAuthError> {
+): Promise<{ errorCode?: string; errorMessage?: string; provider: CliProxyOAuthProvider; state: string; status: "ok" | "wait" | "error" } | CliProxyOAuthError> {
   const cliProxySetting = resolveCliProxyManagementSetting(providerSetting);
   if (!cliProxySetting.success) return { error: cliProxySetting.error, statusCode: cliProxySetting.statusCode };
   const response = await requestCliProxyManagementJson(
@@ -511,8 +522,75 @@ async function getCliProxyOAuthStatus(
   if (!isRecord(response.payload)) return { error: "CLIProxyAPI OAuth 状态返回格式无效", statusCode: 502 };
   const rawStatus = readStringField(response.payload, ["status"]).toLowerCase();
   const status = rawStatus === "ok" || rawStatus === "wait" || rawStatus === "error" ? rawStatus : "error";
-  const errorMessage = readStringField(response.payload, ["error", "message"]);
-  return { errorMessage: errorMessage || undefined, provider: providerName, state, status };
+  const normalizedError = normalizeCliProxyOAuthError(readCliProxyErrorMessage(response.payload));
+  return { errorCode: normalizedError.errorCode, errorMessage: normalizedError.message || undefined, provider: providerName, state, status };
+}
+
+async function checkCliProxyOAuthDiagnostics(
+  providerSetting: ProviderSetting,
+): Promise<{ check: CliProxyDiagnosticCheck; errorCode?: string; summary: string }> {
+  const cliProxySetting = resolveCliProxyManagementSetting(providerSetting);
+  if (!cliProxySetting.success) {
+    return {
+      check: {
+        label: "OAuth 管理端",
+        message: cliProxySetting.error,
+        status: "not_configured",
+        target: "CLIProxyAPI",
+      },
+      summary: "CLIProxyAPI OAuth 尚未配置完整",
+    };
+  }
+  const response = await requestCliProxyManagementJson(cliProxySetting.value, getCliProxyOAuthStartPath("codex"));
+  if ("error" in response) {
+    const normalizedError = normalizeCliProxyOAuthError(response.error);
+    const errorCode = response.errorCode ?? normalizedError.errorCode;
+    return {
+      check: {
+        label: "OpenAI Codex OAuth",
+        message: normalizedError.message || response.error,
+        status: "error",
+        target: cliProxySetting.value.managementBaseUrl,
+      },
+      errorCode,
+      summary: errorCode === "openai_unsupported_region"
+        ? "OpenAI 拒绝当前 CLIProxyAPI 出口地区"
+        : "CLIProxyAPI OAuth 网络自检失败",
+    };
+  }
+  if (!isRecord(response.payload)) {
+    return {
+      check: {
+        label: "OpenAI Codex OAuth",
+        message: "CLIProxyAPI OAuth 返回格式无效",
+        status: "error",
+        target: cliProxySetting.value.managementBaseUrl,
+      },
+      summary: "CLIProxyAPI OAuth 网络自检失败",
+    };
+  }
+  const url = readStringField(response.payload, ["url", "auth_url", "authorization_url"]);
+  const state = readStringField(response.payload, ["state"]);
+  if (!url || !state) {
+    return {
+      check: {
+        label: "OpenAI Codex OAuth",
+        message: "CLIProxyAPI 未返回授权 URL 或 state",
+        status: "error",
+        target: cliProxySetting.value.managementBaseUrl,
+      },
+      summary: "CLIProxyAPI OAuth 网络自检失败",
+    };
+  }
+  return {
+    check: {
+      label: "OpenAI Codex OAuth",
+      message: "CLIProxyAPI 管理端可生成 OpenAI Codex 授权 URL；若登录后换 token 失败，请确认 CLIProxyAPI 进程本身的出口网络可访问 OpenAI 支持地区。",
+      status: "ok",
+      target: cliProxySetting.value.managementBaseUrl,
+    },
+    summary: "CLIProxyAPI OAuth 管理端可发起授权",
+  };
 }
 
 function resolveCliProxyManagementSetting(providerSetting: ProviderSetting): CliProxyManagementSettingResult {
@@ -548,8 +626,9 @@ async function requestCliProxyManagementJson(
     });
     const payload = await readJsonSafely(response);
     if (!response.ok) {
-      const providerMessage = readProviderResponseError(payload, `CLIProxyAPI 管理接口返回 ${response.status}`);
-      return { error: `CLIProxyAPI 管理接口 ${response.status}：${providerMessage}`, statusCode: 502 };
+      const providerMessage = readCliProxyErrorMessage(payload, `CLIProxyAPI 管理接口返回 ${response.status}`);
+      const normalizedError = normalizeCliProxyOAuthError(providerMessage);
+      return { error: normalizedError.message || `CLIProxyAPI 管理接口 ${response.status}：${providerMessage}`, errorCode: normalizedError.errorCode, statusCode: 502 };
     }
     return { payload };
   } catch (error) {
@@ -580,6 +659,17 @@ function getCliProxyOAuthEndpoint(providerName: CliProxyOAuthProvider) {
   }
 }
 
+function normalizeCliProxyOAuthError(message: string): { errorCode?: string; message: string } {
+  if (!message) return { message: "" };
+  if (message.includes("unsupported_country_region_territory")) {
+    return {
+      errorCode: "openai_unsupported_region",
+      message: "OpenAI 拒绝当前 CLIProxyAPI 出口地区，无法完成 Codex OAuth token 交换。请确认 CLIProxyAPI 进程本身走 OpenAI 支持地区的网络出口；如果修改了代理环境变量，请重启本地服务后重新登录。",
+    };
+  }
+  return { message };
+}
+
 function getCliProxyOAuthStartPath(providerName: CliProxyOAuthProvider) {
   const endpoint = getCliProxyOAuthEndpoint(providerName);
   return providerName === "anthropic" ? endpoint : `${endpoint}?is_webui=true`;
@@ -596,6 +686,23 @@ function readStringField(value: Record<string, unknown>, keys: string[]) {
     if (typeof item === "string" && item.trim()) return item.trim();
   }
   return "";
+}
+
+function readCliProxyErrorMessage(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value.trim() || fallback;
+  if (!isRecord(value)) return fallback;
+  const directMessage = readStringField(value, ["error", "message", "detail"]);
+  if (directMessage) return directMessage;
+  if (isRecord(value.error)) {
+    const errorParts = [
+      readStringField(value.error, ["code"]),
+      readStringField(value.error, ["message"]),
+      readStringField(value.error, ["type"]),
+    ].filter(Boolean);
+    if (errorParts.length > 0) return errorParts.join(": ");
+  }
+  const nestedMessage: string = readCliProxyErrorMessage(value.data, "");
+  return nestedMessage || fallback;
 }
 
 async function getCliProxyDiagnosticsSetting(userId: string, canUseAdminProvider: boolean): Promise<ProviderSetting> {
